@@ -6,7 +6,7 @@ Classification: architecture
 
 ## Problem
 
-Forge must enforce an authority boundary: the governed agent executes routine engineering work, while consequential engineering decisions stay developer-owned (PRD §4–§5, [specs/prd.md](../../../../specs/prd.md)).
+Forge must enforce an authority boundary: the governed agent executes routine engineering work, while consequential engineering decisions stay developer-owned (PRD §4–§5, [spec/prd.md](../../../prd.md)).
 Enforcement needs a mechanism that can stop a model-issued tool call before it executes and hold a pending decision until the developer answers.
 Pi offers no such mechanism over RPC alone: the wire has no pre-execution block, and the earliest signal that a tool call exists is emitted when execution has already begun (ticket [Research: Which Pi surfaces can host Forge's governance?](https://github.com/Xaidel/forge/issues/2)).
 The only pre-execution gate is an in-process TypeScript extension's `tool_call` handler, which can mutate input, block, and fail closed.
