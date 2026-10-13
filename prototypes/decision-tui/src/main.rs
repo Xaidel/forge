@@ -82,6 +82,20 @@ fn handle_global(app: &mut App, key: KeyEvent) -> bool {
         return true;
     }
 
+    if app.show_preview {
+        match key.code {
+            KeyCode::Char('p') | KeyCode::Esc => app.show_preview = false,
+            KeyCode::Up | KeyCode::Char('k') => {
+                app.preview_scroll = app.preview_scroll.saturating_sub(1);
+            }
+            KeyCode::Down | KeyCode::Char('j') => {
+                app.preview_scroll = app.preview_scroll.saturating_add(1);
+            }
+            _ => {}
+        }
+        return true;
+    }
+
     let typing = app.phase == Phase::Paused
         && app.verdict.as_ref().map(|v| v.stage == VStage::Rationale).unwrap_or(false);
 
@@ -97,6 +111,13 @@ fn handle_global(app: &mut App, key: KeyEvent) -> bool {
             }
             KeyCode::Char('h') => {
                 app.show_journal = true;
+                app.show_preview = false;
+                return true;
+            }
+            KeyCode::Char('p') => {
+                app.show_preview = true;
+                app.preview_scroll = 0;
+                app.show_journal = false;
                 return true;
             }
             KeyCode::Char('q') => {

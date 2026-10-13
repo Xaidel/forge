@@ -13,7 +13,8 @@ use ratatui::Frame;
 
 use crate::script::{
     choice_at, App, Choice, Kind, LogEvent, Phase, VStage, AFFECTED, ARTIFACT, BLOCK_ATTEMPT,
-    BLOCK_REASON, BLOCK_STEER, CONTEXT, OPTIONS, RECORD_PATH, STATEMENT, WARNINGS,
+    BLOCK_REASON, BLOCK_STEER, CONTEXT, OPTIONS, RECORD_CLASSIFICATION, RECORD_CONFIRMATION,
+    RECORD_DATE, RECORD_DRIVERS, RECORD_FILE, RECORD_ID, STATEMENT, WARNINGS,
 };
 
 pub fn variant_name(variant: usize) -> &'static str {
@@ -82,6 +83,9 @@ pub fn render_app(f: &mut Frame, app: &App) {
     if app.show_journal {
         render_journal(app, f, rows[0]);
     }
+    if app.show_preview {
+        render_preview(app, f, rows[0]);
+    }
 }
 
 fn render_chrome(app: &App, f: &mut Frame, area: Rect) {
@@ -123,6 +127,176 @@ fn render_journal(app: &App, f: &mut Frame, area: Rect) {
         Style::new().fg(Color::DarkGray),
     )));
     f.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), inner);
+}
+
+// --------------------------------------------------------------- record preview
+
+/// Which option the preview shows: the committed choice, else the highlighted one.
+fn preview_option(app: &App) -> Option<usize> {
+    if app.phase == Phase::Paused {
+        if let Some(v) = app.verdict.as_ref() {
+            if let Some(Choice::Option(i)) = v.choice {
+                return Some(i);
+            }
+            if v.stage == VStage::Selecting && v.highlight < OPTIONS.len() {
+                return Some(v.highlight);
+            }
+        }
+        None
+    } else {
+        app.chosen
+    }
+}
+
+fn heading(text: &str) -> Line<'static> {
+    Line::from(Span::styled(
+        text.to_string(),
+        Style::new().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+    ))
+}
+
+fn record_body(text: &str) -> Line<'static> {
+    Line::from(Span::styled(format!(" {text}"), Style::new().fg(Color::Gray)))
+}
+
+fn record_bullet(text: &str) -> Line<'static> {
+    Line::from(Span::styled(format!(" - {text}"), Style::new().fg(Color::Gray)))
+}
+
+fn meta_line(key: &str, value: &str) -> Line<'static> {
+    Line::from(vec![
+        Span::styled(format!(" {key} "), Style::new().fg(Color::DarkGray)),
+        Span::styled(value.to_string(), Style::new()),
+    ])
+}
+
+fn render_preview(app: &App, f: &mut Frame, area: Rect) {
+    let box_area = centered(area, 94, 92);
+    f.render_widget(Clear, box_area);
+    let block = Block::bordered()
+        .title(Line::from(Span::styled(
+            format!(" record preview -- the doc this decision is writing ({RECORD_ID}) "),
+            Style::new().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+        )))
+        .border_style(Style::new().fg(Color::Cyan));
+    let inner = block.inner(box_area);
+    f.render_widget(block, box_area);
+    if inner.height < 3 {
+        return;
+    }
+    let rows = Layout::vertical([Constraint::Min(1), Constraint::Length(1)]).areas::<2>(inner);
+    f.render_widget(
+        Paragraph::new(preview_lines(app))
+            .wrap(Wrap { trim: false })
+            .scroll((app.preview_scroll, 0)),
+        rows[0],
+    );
+    f.render_widget(
+        Paragraph::new(Span::styled(
+            " ↑↓ scroll · p / esc close",
+            Style::new().fg(Color::DarkGray),
+        )),
+        rows[1],
+    );
+}
+
+fn preview_lines(app: &App) -> Vec<Line<'static>> {
+    let mut lines: Vec<Line> = Vec::new();
+    let written = app.phase != Phase::Paused;
+    let Some(i) = preview_option(app) else {
+        lines.push(Line::from(Span::styled(
+            " no record will be written -- Reject and Abort produce a journal entry only.",
+            Style::new().fg(Color::Gray),
+        )));
+        return lines;
+    };
+    let option = &OPTIONS[i];
+
+    let banner = if written {
+        format!(" WRITTEN -- {RECORD_FILE} ")
+    } else {
+        format!(" WILL BE WRITTEN ON CONFIRM -- option {} ", i + 1)
+    };
+    let banner_color = if written { Color::Green } else { Color::Yellow };
+    lines.push(Line::from(Span::styled(
+        banner,
+        Style::new().fg(banner_color).add_modifier(Modifier::BOLD),
+    )));
+    lines.push(Line::from(Span::styled(
+        " byte-for-byte the approved text; written by the core before the gate unblocks",
+        Style::new().fg(Color::DarkGray),
+    )));
+    lines.push(Line::from(""));
+
+    lines.push(Line::from(Span::styled(
+        format!("# ADR: {}", option.record_title),
+        Style::new().add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
+    )));
+    lines.push(Line::from(""));
+    lines.push(meta_line("ID:", RECORD_ID));
+    lines.push(meta_line("Status:", "accepted"));
+    lines.push(meta_line("Classification:", RECORD_CLASSIFICATION));
+    lines.push(meta_line("Date:", RECORD_DATE));
+    lines.push(meta_line("Origin:", "agent-proposal"));
+    lines.push(Line::from(""));
+    lines.push(heading("## Context and Problem Statement"));
+    lines.push(record_body(CONTEXT));
+    lines.push(Line::from(""));
+    lines.push(heading("## Decision Drivers"));
+    for driver in RECORD_DRIVERS {
+        lines.push(record_bullet(driver));
+    }
+    lines.push(Line::from(""));
+    lines.push(heading("## Decision"));
+    lines.push(record_body(option.decision_text));
+    lines.push(Line::from(""));
+    lines.push(heading("## Alternatives Considered"));
+    for (j, other) in OPTIONS.iter().enumerate() {
+        if j == i {
+            continue;
+        }
+        lines.push(Line::from(vec![
+            Span::styled(
+                format!(" **{}** -- ", other.label),
+                Style::new().add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(other.why_not.to_string(), Style::new().fg(Color::Gray)),
+        ]));
+    }
+    lines.push(Line::from(""));
+    lines.push(heading("## Consequences"));
+    for tradeoff in option.tradeoffs {
+        lines.push(record_bullet(tradeoff));
+    }
+    for risk in option.risks {
+        lines.push(Line::from(Span::styled(
+            format!(" - ⚠ {risk}"),
+            Style::new().fg(Color::Yellow),
+        )));
+    }
+    lines.push(Line::from(""));
+    lines.push(heading("## Confirmation"));
+    lines.push(record_body(RECORD_CONFIRMATION));
+    lines.push(Line::from(""));
+
+    let note = app
+        .verdict
+        .as_ref()
+        .map(|v| v.rationale.trim().to_string())
+        .filter(|n| !n.is_empty())
+        .unwrap_or_else(|| app.note.clone());
+    if !note.is_empty() {
+        lines.push(Line::from(Span::styled(
+            format!(" (amendment note, journaled: {note})"),
+            Style::new().fg(Color::DarkGray).add_modifier(Modifier::ITALIC),
+        )));
+        lines.push(Line::from(""));
+    }
+    lines.push(Line::from(Span::styled(
+        " on confirm, execution resumes within the grant: src/payments/** · migrations/**",
+        Style::new().fg(Color::DarkGray),
+    )));
+    lines
 }
 
 // ------------------------------------------------------------------ variant 1
@@ -721,7 +895,7 @@ fn v3_panel(app: &App, f: &mut Frame, area: Rect) {
                     )));
                     lines.push(Line::from(""));
                     lines.push(Line::from(Span::styled(
-                        "  ↑↓ · 1-5 · enter",
+                        "  ↑↓ · 1-5 · enter · p preview",
                         Style::new().fg(Color::DarkGray),
                     )));
                 }
@@ -744,7 +918,7 @@ fn v3_panel(app: &App, f: &mut Frame, area: Rect) {
                     }
                     lines.push(Line::from(""));
                     lines.push(Line::from(Span::styled(
-                        "  space -- acknowledge (journaled)",
+                        "  space -- acknowledge (journaled) · p preview",
                         Style::new().fg(Color::DarkGray),
                     )));
                 }
@@ -761,7 +935,7 @@ fn v3_panel(app: &App, f: &mut Frame, area: Rect) {
                     ]));
                     lines.push(Line::from(""));
                     lines.push(Line::from(Span::styled(
-                        "  enter -- submit",
+                        "  enter -- submit · p preview",
                         Style::new().fg(Color::DarkGray),
                     )));
                 }
@@ -800,7 +974,7 @@ fn v3_panel(app: &App, f: &mut Frame, area: Rect) {
             )));
             lines.push(Line::from(""));
             lines.push(Line::from(Span::styled(
-                format!("  record -- {RECORD_PATH}"),
+                format!("  record -- {RECORD_FILE} ({RECORD_ID})"),
                 Style::new().fg(Color::Gray),
             )));
             lines.push(Line::from(Span::styled(
@@ -818,9 +992,9 @@ fn v3_panel(app: &App, f: &mut Frame, area: Rect) {
                 "  authority -- routine work auto-allows",
                 Style::new().fg(Color::DarkGray),
             )));
-            if app.accepted_count() > 0 {
+            if let Some(i) = app.chosen {
                 lines.push(Line::from(Span::styled(
-                    "  last -- TDD-004 accepted (idempotency table)",
+                    format!("  last -- {RECORD_ID} accepted -- {}", OPTIONS[i].record_title),
                     Style::new().fg(Color::Green),
                 )));
                 lines.push(Line::from(Span::styled(
@@ -830,7 +1004,7 @@ fn v3_panel(app: &App, f: &mut Frame, area: Rect) {
             }
             lines.push(Line::from(""));
             lines.push(Line::from(Span::styled(
-                "  h -- open the task journal",
+                "  h -- task journal · p -- record preview",
                 Style::new().fg(Color::DarkGray),
             )));
         }
@@ -968,6 +1142,27 @@ pub fn print_snapshot() {
             );
             println!("{out}");
         }
+    }
+    // Overlays (Mission is the picked base; preview/journal ride on top of it).
+    for (state, base, overlay) in [
+        ("modal-preview-select", "paused-select", "preview"),
+        ("modal-preview-written", "complete", "preview"),
+        ("modal-journal", "complete", "journal"),
+    ] {
+        let mut app = App::new_with_variant(2);
+        seed(&mut app, base);
+        if state == "modal-preview-select" {
+            if let Some(v) = app.verdict.as_mut() {
+                v.highlight = 0;
+            }
+        }
+        match overlay {
+            "preview" => app.show_preview = true,
+            _ => app.show_journal = true,
+        }
+        let out = render_to_string(&app, 104, 32);
+        println!("=============== variant 3 (Mission) · {state} ===============");
+        println!("{out}");
     }
 }
 

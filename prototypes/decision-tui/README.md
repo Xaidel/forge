@@ -17,10 +17,14 @@ Three structurally different variants of the same flow, switch with `[` / `]`:
 3. **Mission** — persistent panes: activity left, decision pane right, task
    journal on `h`.
 
+Iteration 2: Mission is the picked base, with a live **record preview** (`p`):
+the canonical ADR the decision is writing, tracking the highlighted option,
+showing the exact text that gets written byte-for-byte on confirm.
+
 Keys: `[` / `]` switch variant · `space` advance the scripted run · `ctrl+r`
-replay · `h` open the task journal · `q` quit. Decisions: `↑↓` / `j k` move,
-`1-5` select, `enter` confirm, `space` acknowledges warnings, `d` (inline
-variant) expands details.
+replay · `h` open the task journal · `p` open the record preview (↑↓ scroll) ·
+`q` quit. Decisions: `↑↓` / `j k` move, `1-5` select, `enter` confirm, `space`
+acknowledges warnings, `d` (inline variant) expands details.
 
 Run it (Windows Terminal recommended):
 

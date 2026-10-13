@@ -81,6 +81,11 @@ pub struct DecOption {
     pub risks: &'static [&'static str],
     pub consequences: &'static str,
     pub recommended: bool,
+    /// What the record says if this option wins (#4 canonical ADR shape).
+    pub record_title: &'static str,
+    pub decision_text: &'static str,
+    /// Why this option lost, when it appears under Alternatives Considered.
+    pub why_not: &'static str,
 }
 
 pub const STATEMENT: &str = "How should payment-capture idempotency keys be stored?";
@@ -102,6 +107,10 @@ pub const OPTIONS: &[DecOption] = &[
         ],
         consequences: "captures dedupe via an in-process map; keys do not survive restarts.",
         recommended: false,
+        record_title: "In-memory idempotency keys for payment capture",
+        decision_text: "Payment-capture idempotency keys are held in an in-process map keyed by the \
+            client request key. Keys are process-local: they do not survive restarts or scale-out.",
+        why_not: "keys are lost on restart -- the crash window still double-charges",
     },
     DecOption {
         label: "Idempotency table + unique constraint",
@@ -113,6 +122,11 @@ pub const OPTIONS: &[DecOption] = &[
         risks: &["a migration touches a table carrying production traffic"],
         consequences: "captures dedupe on a persisted unique key; duplicates fail the constraint.",
         recommended: true,
+        record_title: "Persist payment-capture idempotency keys in a constrained table",
+        decision_text: "Payment-capture idempotency keys are persisted in a dedicated table with a \
+            unique constraint. Duplicate capture attempts fail the constraint instead of posting \
+            a second charge.",
+        why_not: "adds a migration touching a table with production traffic",
     },
     DecOption {
         label: "Redis with a 24h TTL",
@@ -124,6 +138,10 @@ pub const OPTIONS: &[DecOption] = &[
         ],
         consequences: "captures dedupe in Redis; the capture path depends on the cache being up.",
         recommended: false,
+        record_title: "Keep payment-capture idempotency keys in Redis with a TTL",
+        decision_text: "Payment-capture idempotency keys live in Redis with a 24-hour TTL; the \
+            capture path depends on the cache being available.",
+        why_not: "adds Redis as a runtime dependency; eviction can silently drop keys",
     },
 ];
 
@@ -133,11 +151,22 @@ pub const WARNINGS: &[&str] = &[
 ];
 
 pub const AFFECTED: &[&str] = &["src/payments/** -- write", "migrations/** -- write"];
-pub const ARTIFACT: &str = "TDD -- what the system must do";
+pub const ARTIFACT: &str = "ADR -- why / structural (storage strategy)";
 
-pub const RECORD_PATH: &str = "spec/tdd/accepted/2026-10-14-idempotent-capture.md (TDD-004)";
+pub const RECORD_ID: &str = "ADR-0007";
+pub const RECORD_FILE: &str =
+    "spec/adr/accepted/architecture/2026-10-14-idempotent-capture-storage.md";
+pub const RECORD_DATE: &str = "2026-10-14";
+pub const RECORD_CLASSIFICATION: &str = "architecture";
+pub const RECORD_DRIVERS: &[&str] = &[
+    "duplicate captures must be impossible across restarts and redeploys",
+    "failure behavior must be deterministic and observable",
+    "operational cost must stay proportionate to the money at risk",
+];
+pub const RECORD_CONFIRMATION: &str =
+    "The sample-repo walkthrough replays a capture request after a simulated restart; exactly one charge posts.";
 
-pub const BLOCK_ATTEMPT: &str = "write spec/tdd/accepted/2026-10-14-idempotent-capture.md";
+pub const BLOCK_ATTEMPT: &str = "write spec/adr/accepted/architecture/2026-10-14-idempotent-capture-storage.md";
 pub const BLOCK_REASON: &str =
     "agent writes under /spec/** are never allowed -- records are core-written from the approved verdict";
 pub const BLOCK_STEER: &str = "implement to the accepted TDD; the record is not agent-editable";
@@ -182,6 +211,10 @@ pub struct App {
     pub verdict: Option<Verdict>,
     pub journal: Vec<LogEvent>,
     pub show_journal: bool,
+    pub show_preview: bool,
+    pub preview_scroll: u16,
+    pub chosen: Option<usize>,
+    pub note: String,
     pub v2_detail: bool,
     pub quit: bool,
     pub started: Instant,
@@ -198,6 +231,10 @@ impl App {
             verdict: None,
             journal: Vec::new(),
             show_journal: false,
+            show_preview: false,
+            preview_scroll: 0,
+            chosen: None,
+            note: String::new(),
             v2_detail: false,
             quit: false,
             started: Instant::now(),
@@ -254,7 +291,7 @@ impl App {
                 self.phase = Phase::Complete;
                 self.events.push(ev(
                     Kind::Done,
-                    "task complete -- TDD-004 accepted, warnings acked, 1 boundary attempt steered",
+                    format!("task complete -- {RECORD_ID} accepted, warnings acked, 1 boundary attempt steered"),
                 ));
                 self.journal.push(ev(Kind::Done, "task complete"));
             }
@@ -304,19 +341,25 @@ impl App {
         let Some(v) = self.verdict.take() else { return };
         let rationale = v.rationale.trim().to_string();
         if !rationale.is_empty() {
+            self.note = rationale.clone();
             self.journal
                 .push(ev(Kind::Ack, format!("rationale recorded: {rationale}")));
         }
         if let Some(Choice::Option(i)) = v.choice {
             let option = &OPTIONS[i];
+            self.chosen = Some(i);
             self.events
                 .push(ev(Kind::Grant, format!("verdict: {} -- {}", i + 1, option.label)));
-            self.events.push(ev(Kind::Decision, format!("record written -- {RECORD_PATH}")));
+            self.events.push(ev(
+                Kind::Decision,
+                format!("record written -- {RECORD_FILE} ({RECORD_ID})"),
+            ));
             self.events.push(ev(
                 Kind::Grant,
                 "decision grant active -- src/payments/** - migrations/** (task-scoped)",
             ));
-            self.journal.push(ev(Kind::Decision, format!("TDD-004 accepted -- {}", option.label)));
+            self.journal
+                .push(ev(Kind::Decision, format!("{RECORD_ID} accepted -- {}", option.label)));
         }
         self.phase = Phase::Running;
     }
