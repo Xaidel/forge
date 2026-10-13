@@ -17,17 +17,20 @@ Three structurally different variants of the same flow, switch with `[` / `]`:
 3. **Mission** — persistent panes: activity left, decision pane right, task
    journal on `h`.
 
-Iteration 3: Mission is the picked base, with a **content inspector** (`p`):
-the canonical ADR the decision is writing (tracking the highlighted option,
-byte-for-byte what gets written on confirm) **and** the blocked write — the
-diff the agent tried to make to the accepted record when the gate denied it
-(PRD §8.2). `←→` switches docs inside the inspector.
+Iteration 4: Mission is the base, with a **content inspector** (`p`) and
+**editable amendments**. The inspector shows the canonical ADR the decision is
+writing (tracking the highlighted option, byte-for-byte what gets written on
+confirm) and the blocked write — the diff the agent tried to make to the
+accepted record when the gate denied it (PRD §8.2); `←→` switches docs. The
+amendments stage makes the record text itself editable: your wording is what
+the core writes, with an optional rationale note journaled alongside.
 
 Keys: `[` / `]` switch variant · `space` advance the scripted run · `ctrl+r`
 replay · `h` open the task journal · `p` open the content inspector
 (`←→` switch doc, `↑↓` scroll) · `q` quit. Decisions: `↑↓` / `j k` move,
-`1-5` select, `enter` confirm, `space` acknowledges warnings, `d` (inline
-variant) expands details.
+`1-5` select, `enter` confirm, `space` acknowledges warnings. Amendments:
+`↑↓`/`tab` switch fields, typing edits the focused field, `ctrl+u` clears it,
+`enter` submits. `d` (inline variant) expands option details.
 
 Run it (Windows Terminal recommended):
 

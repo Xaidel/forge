@@ -236,6 +236,8 @@ pub struct App {
     pub preview_scroll: u16,
     pub preview_target: usize,
     pub chosen: Option<usize>,
+    pub amended: Option<String>,
+    pub amend_field: usize,
     pub note: String,
     pub v2_detail: bool,
     pub quit: bool,
@@ -257,6 +259,8 @@ impl App {
             preview_scroll: 0,
             preview_target: 0,
             chosen: None,
+            amended: None,
+            amend_field: 0,
             note: String::new(),
             v2_detail: false,
             quit: false,
@@ -322,11 +326,15 @@ impl App {
     }
 
     pub fn choose(&mut self, choice: Choice) {
+        self.amended = None;
         match choice {
             Choice::Option(_) => {
                 let Some(v) = self.verdict.as_mut() else { return };
                 v.choice = Some(choice);
                 v.stage = if WARNINGS.is_empty() { VStage::Rationale } else { VStage::Acking };
+                if v.stage == VStage::Rationale {
+                    self.amend_field = 0;
+                }
             }
             Choice::Reject => {
                 self.events.push(ev(Kind::Info, "reject -- replan requested, no record written"));
@@ -353,15 +361,56 @@ impl App {
         }
         let warning = WARNINGS[v.acked];
         v.acked += 1;
+        let all_acked = v.acked >= WARNINGS.len();
+        if all_acked {
+            v.stage = VStage::Rationale;
+        }
         self.journal
             .push(ev(Kind::Ack, format!("warning acknowledged: {warning}")));
-        if v.acked >= WARNINGS.len() {
-            v.stage = VStage::Rationale;
+        if all_acked {
+            self.amend_field = 0;
         }
     }
 
+    fn record_base(&self) -> String {
+        let i = match self.verdict.as_ref().and_then(|v| v.choice) {
+            Some(Choice::Option(i)) => i,
+            _ => 0,
+        };
+        OPTIONS[i].decision_text.to_string()
+    }
+
+    pub fn amend_char(&mut self, c: char) {
+        let base = self.record_base();
+        let buffer = self.amended.get_or_insert_with(|| base);
+        buffer.push(c);
+    }
+
+    pub fn amend_backspace(&mut self) {
+        if let Some(buffer) = self.amended.as_mut() {
+            buffer.pop();
+        }
+    }
+
+    pub fn amend_clear(&mut self) {
+        self.amended = Some(String::new());
+    }
+
+    pub fn amended_text(&self) -> Option<&str> {
+        self.amended.as_deref()
+    }
+
     pub fn submit_rationale(&mut self) {
+        let base = self.record_base();
         let Some(v) = self.verdict.take() else { return };
+        if let Some(amended) = self.amended.clone() {
+            if amended.trim().is_empty() || amended.trim() == base.trim() {
+                self.amended = None;
+            } else {
+                self.journal
+                    .push(ev(Kind::Ack, "record text amended by developer before acceptance"));
+            }
+        }
         let rationale = v.rationale.trim().to_string();
         if !rationale.is_empty() {
             self.note = rationale.clone();

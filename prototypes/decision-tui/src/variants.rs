@@ -4,7 +4,7 @@
 // Variant 3 "Mission": persistent panes; activity left, decision pane right, journal on `h`.
 // Switch variants with [ and ]. Nothing here is production code.
 
-use ratatui::crossterm::event::{KeyCode, KeyEvent};
+use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
@@ -180,6 +180,14 @@ fn block_occurred(app: &App) -> bool {
     app.events.iter().any(|e| e.kind == Kind::Block)
 }
 
+fn chosen_index(app: &App) -> usize {
+    app.verdict
+        .as_ref()
+        .and_then(|v| v.choice)
+        .map(|c| if let Choice::Option(i) = c { i } else { 0 })
+        .unwrap_or(0)
+}
+
 fn preview_targets(app: &App) -> Vec<PreviewTarget> {
     let mut targets = Vec::new();
     if let Some(i) = preview_option(app) {
@@ -305,7 +313,15 @@ fn preview_record_lines(app: &App, i: usize) -> Vec<Line<'static>> {
     }
     lines.push(Line::from(""));
     lines.push(heading("## Decision"));
-    lines.push(record_body(option.decision_text));
+    let amended = app.amended_text();
+    let decision_text = amended.unwrap_or(option.decision_text);
+    lines.push(record_body(decision_text));
+    if amended.is_some() {
+        lines.push(Line::from(Span::styled(
+            " (wording amended by the developer before acceptance)",
+            Style::new().fg(Color::DarkGray).add_modifier(Modifier::ITALIC),
+        )));
+    }
     lines.push(Line::from(""));
     lines.push(heading("## Alternatives Considered"));
     for (j, other) in OPTIONS.iter().enumerate() {
@@ -618,31 +634,69 @@ fn v1_ack(app: &App, f: &mut Frame, area: Rect) {
     f.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), inner);
 }
 
+fn field_marker(label: &str, focused: bool, color: Color) -> Line<'static> {
+    Line::from(vec![
+        Span::styled(
+            if focused { "  ❯ " } else { "    " }.to_string(),
+            Style::new().fg(color),
+        ),
+        Span::styled(
+            label.to_string(),
+            if focused {
+                Style::new().fg(color).add_modifier(Modifier::BOLD)
+            } else {
+                Style::new().fg(Color::DarkGray)
+            },
+        ),
+    ])
+}
+
 fn v1_rationale(app: &App, f: &mut Frame, area: Rect) {
     let v = app.verdict.as_ref().unwrap();
-    let box_area = centered(area, 76, 40);
+    let box_area = centered(area, 86, 62);
     let block = Block::bordered()
         .title(Line::from(Span::styled(
-            " AMENDMENTS / RATIONALE -- optional ",
+            " AMENDMENTS -- your wording becomes the record ",
             Style::new().fg(Color::Cyan).add_modifier(Modifier::BOLD),
         )))
         .border_style(Style::new().fg(Color::Cyan));
     let inner = block.inner(box_area);
     f.render_widget(block, box_area);
+
+    let option = &OPTIONS[chosen_index(app)];
+    let record_focus = app.amend_field == 0;
+    let record_text = app.amended_text().unwrap_or(option.decision_text);
+
     let lines: Vec<Line> = vec![
         Line::from(Span::styled(
-            "  Anything to amend, or a note to record with the verdict?",
+            "  The record is written byte-for-byte from this text. Edit it if the wording misses your intent.",
             Style::new().fg(Color::Gray),
         )),
         Line::from(""),
+        field_marker("record text -- ## Decision", record_focus, Color::Yellow),
         Line::from(vec![
-            Span::styled("  ❯ ", Style::new().fg(Color::Yellow)),
-            Span::styled(v.rationale.clone(), Style::new()),
-            Span::styled("█", Style::new().fg(Color::Yellow)),
+            Span::styled("    ", Style::new()),
+            Span::styled(record_text.to_string(), Style::new()),
+            if record_focus {
+                Span::styled("█", Style::new().fg(Color::Yellow))
+            } else {
+                Span::raw("")
+            },
+        ]),
+        Line::from(""),
+        field_marker("rationale note (optional, journaled)", !record_focus, Color::Cyan),
+        Line::from(vec![
+            Span::styled("    ", Style::new()),
+            Span::styled(v.rationale.clone(), Style::new().fg(Color::Gray)),
+            if !record_focus {
+                Span::styled("█", Style::new().fg(Color::Cyan))
+            } else {
+                Span::raw("")
+            },
         ]),
         Line::from(""),
         Line::from(Span::styled(
-            "  enter -- submit · empty accepts the choice as-is",
+            "  ↑↓/tab -- switch field · enter -- submit · ctrl+u -- clear field",
             Style::new().fg(Color::DarkGray),
         )),
     ];
@@ -702,7 +756,7 @@ fn render_v2(app: &App, f: &mut Frame, area: Rect) {
             match v.stage {
                 VStage::Selecting => v2_select_lines(app, &mut lines),
                 VStage::Acking => v2_ack_lines(v, &mut lines),
-                VStage::Rationale => v2_rationale_lines(v, &mut lines),
+                VStage::Rationale => v2_rationale_lines(app, &mut lines),
             }
         }
         Phase::Blocked => v2_block_lines(&mut lines),
@@ -845,14 +899,49 @@ fn v2_ack_lines(v: &crate::script::Verdict, lines: &mut Vec<Line<'static>>) {
     }
 }
 
-fn v2_rationale_lines(v: &crate::script::Verdict, lines: &mut Vec<Line<'static>>) {
+fn v2_rationale_lines(app: &App, lines: &mut Vec<Line<'static>>) {
+    let v = app.verdict.as_ref().unwrap();
+    let option = &OPTIONS[chosen_index(app)];
+    let record_focus = app.amend_field == 0;
+    let record_text = app.amended_text().unwrap_or(option.decision_text);
+    lines.push(Line::from(Span::styled(
+        "    ✎ amendments -- the record is written byte-for-byte from this text",
+        Style::new().fg(Color::Cyan),
+    )));
     lines.push(Line::from(vec![
-        Span::styled("    > amendments / rationale (optional): ", Style::new().fg(Color::Cyan)),
-        Span::styled(v.rationale.clone(), Style::new()),
-        Span::styled("█", Style::new().fg(Color::Yellow)),
+        Span::styled(
+            if record_focus { "    ❯ record text: " } else { "      record text: " }.to_string(),
+            if record_focus {
+                Style::new().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+            } else {
+                Style::new().fg(Color::DarkGray)
+            },
+        ),
+        Span::styled(record_text.to_string(), Style::new()),
+        if record_focus {
+            Span::styled("█", Style::new().fg(Color::Yellow))
+        } else {
+            Span::raw("")
+        },
+    ]));
+    lines.push(Line::from(vec![
+        Span::styled(
+            if !record_focus { "    ❯ note: " } else { "      note: " }.to_string(),
+            if !record_focus {
+                Style::new().fg(Color::Cyan).add_modifier(Modifier::BOLD)
+            } else {
+                Style::new().fg(Color::DarkGray)
+            },
+        ),
+        Span::styled(v.rationale.clone(), Style::new().fg(Color::Gray)),
+        if !record_focus {
+            Span::styled("█", Style::new().fg(Color::Cyan))
+        } else {
+            Span::raw("")
+        },
     ]));
     lines.push(Line::from(Span::styled(
-        "      enter -- submit · empty accepts the choice as-is",
+        "      ↑↓/tab switch · enter submit · ctrl+u clear",
         Style::new().fg(Color::DarkGray),
     )));
 }
@@ -1021,19 +1110,38 @@ fn v3_panel(app: &App, f: &mut Frame, area: Rect) {
                     )));
                 }
                 VStage::Rationale => {
+                    let option = &OPTIONS[chosen_index(app)];
+                    let record_focus = app.amend_field == 0;
+                    let record_text = app.amended_text().unwrap_or(option.decision_text);
                     lines.push(Line::from(Span::styled(
-                        "  amendments / rationale (optional)",
-                        Style::new().fg(Color::Cyan),
+                        "  the record is written from this text",
+                        Style::new().fg(Color::Gray),
                     )));
                     lines.push(Line::from(""));
+                    lines.push(field_marker("record text", record_focus, Color::Yellow));
                     lines.push(Line::from(vec![
-                        Span::styled("  ❯ ", Style::new().fg(Color::Yellow)),
-                        Span::styled(v.rationale.clone(), Style::new()),
-                        Span::styled("█", Style::new().fg(Color::Yellow)),
+                        Span::styled("    ", Style::new()),
+                        Span::styled(record_text.to_string(), Style::new()),
+                        if record_focus {
+                            Span::styled("█", Style::new().fg(Color::Yellow))
+                        } else {
+                            Span::raw("")
+                        },
+                    ]));
+                    lines.push(Line::from(""));
+                    lines.push(field_marker("rationale note (optional)", !record_focus, Color::Cyan));
+                    lines.push(Line::from(vec![
+                        Span::styled("    ", Style::new()),
+                        Span::styled(v.rationale.clone(), Style::new().fg(Color::Gray)),
+                        if !record_focus {
+                            Span::styled("█", Style::new().fg(Color::Cyan))
+                        } else {
+                            Span::raw("")
+                        },
                     ]));
                     lines.push(Line::from(""));
                     lines.push(Line::from(Span::styled(
-                        "  enter -- submit · p preview",
+                        "  ↑↓/tab switch · enter submit · ctrl+u clear · p preview",
                         Style::new().fg(Color::DarkGray),
                     )));
                 }
@@ -1148,20 +1256,47 @@ fn selecting(app: &mut App, key: KeyEvent, allow_detail: bool) -> bool {
 }
 
 fn rationale_input(app: &mut App, key: KeyEvent) -> bool {
+    if key.modifiers.contains(KeyModifiers::CONTROL) {
+        if let KeyCode::Char('u') = key.code {
+            match app.amend_field {
+                0 => app.amend_clear(),
+                _ => {
+                    if let Some(v) = app.verdict.as_mut() {
+                        v.rationale.clear();
+                    }
+                }
+            }
+            return true;
+        }
+    }
     match key.code {
         KeyCode::Enter => {
             app.submit_rationale();
             true
         }
+        KeyCode::Tab | KeyCode::Up | KeyCode::Down => {
+            app.amend_field = 1 - app.amend_field.min(1);
+            true
+        }
         KeyCode::Backspace => {
-            if let Some(v) = app.verdict.as_mut() {
-                v.rationale.pop();
+            match app.amend_field {
+                0 => app.amend_backspace(),
+                _ => {
+                    if let Some(v) = app.verdict.as_mut() {
+                        v.rationale.pop();
+                    }
+                }
             }
             true
         }
         KeyCode::Char(c) => {
-            if let Some(v) = app.verdict.as_mut() {
-                v.rationale.push(c);
+            match app.amend_field {
+                0 => app.amend_char(c),
+                _ => {
+                    if let Some(v) = app.verdict.as_mut() {
+                        v.rationale.push(c);
+                    }
+                }
             }
             true
         }
@@ -1255,6 +1390,11 @@ pub fn print_snapshot() {
                 v.highlight = 0;
             }
         }
+        if state == "modal-preview-written" {
+            app.amended = Some(
+                "Payment-capture idempotency keys are persisted in a dedicated table with a unique constraint, and are retained until retention expiry so replays after backup restores are still rejected.".into(),
+            );
+        }
         match overlay {
             "preview" => {
                 app.preview_target = default_preview_target(&app);
@@ -1287,8 +1427,11 @@ fn seed(app: &mut App, state: &str) {
             app.acknowledge();
             app.acknowledge();
             if let Some(v) = app.verdict.as_mut() {
-                v.rationale = "Cap retries at 3; keep the 24h replay window".into();
+                v.rationale = "the retention window matters for the audit story".into();
             }
+            app.amended = Some(
+                "Payment-capture idempotency keys are persisted in a dedicated table with a unique constraint, and are retained until retention expiry so replays after backup restores are still rejected.".into(),
+            );
         }
         "blocked" => {
             app.advance();
