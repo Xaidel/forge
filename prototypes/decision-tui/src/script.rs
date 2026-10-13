@@ -192,6 +192,89 @@ pub const BLOCK_DIFF: &[(&str, &str)] = &[
     ),
 ];
 
+/// One write the agent performs during the run; inspectable in the viewer.
+pub struct WriteDoc {
+    pub label: &'static str,
+    pub path: &'static str,
+    pub summary: &'static str,
+    pub event_marker: &'static str,
+    pub diff: &'static [(&'static str, &'static str)],
+}
+
+pub const WRITES: &[WriteDoc] = &[
+    WriteDoc {
+        label: "edit",
+        path: "src/payments/retry.rs",
+        summary: "+38 -4",
+        event_marker: "edit src/payments/retry.rs",
+        diff: &[
+            ("@@", "src/payments/retry.rs"),
+            (
+                "-",
+                "fn capture(payload: CaptureRequest) -> Result<Capture> {",
+            ),
+            (
+                "-",
+                "    client.post(\"/capture\", &payload).await",
+            ),
+            ("-", "}"),
+            (
+                "+",
+                "fn capture(payload: CaptureRequest) -> Result<Capture> {",
+            ),
+            (
+                "+",
+                "    // retry-safe: same key on every attempt",
+            ),
+            (
+                "+",
+                "    retry(3, || client.post_with_key(\"/capture\", &payload.key, &payload)).await",
+            ),
+            ("+", "}"),
+        ],
+    },
+    WriteDoc {
+        label: "edit",
+        path: "src/payments/capture.rs",
+        summary: "+41 -9",
+        event_marker: "edit src/payments/capture.rs",
+        diff: &[
+            ("@@", "src/payments/capture.rs"),
+            ("-", "    store.capture(payload).await"),
+            (
+                "+",
+                "    // ADR-0007: the persisted unique key is the dedupe",
+            ),
+            (
+                "+",
+                "    match store.insert_idempotency_key(&payload.key).await {",
+            ),
+            ("+", "        Ok(()) => store.capture(payload).await,"),
+            (
+                "+",
+                "        Err(UniqueViolation) => store.find_capture(&payload.key).await,",
+            ),
+            ("+", "    }"),
+        ],
+    },
+    WriteDoc {
+        label: "write",
+        path: "migrations/20261014_add_idempotency_keys.sql",
+        summary: "+22",
+        event_marker: "write migrations/20261014",
+        diff: &[
+            ("@@", "migrations/20261014_add_idempotency_keys.sql"),
+            ("+", "CREATE TABLE idempotency_keys ("),
+            ("+", "    key         TEXT PRIMARY KEY,"),
+            ("+", "    account_id  UUID NOT NULL,"),
+            ("+", "    created_at  TIMESTAMPTZ NOT NULL DEFAULT now()"),
+            ("+", ");"),
+            ("+", "CREATE UNIQUE INDEX idempotency_keys_account"),
+            ("+", "    ON idempotency_keys (account_id, key);"),
+        ],
+    },
+];
+
 pub enum Beat {
     Log(Kind, &'static str),
     Raise,
@@ -232,9 +315,9 @@ pub struct App {
     pub verdict: Option<Verdict>,
     pub journal: Vec<LogEvent>,
     pub show_journal: bool,
-    pub show_preview: bool,
-    pub preview_scroll: u16,
-    pub preview_target: usize,
+    pub show_viewer: bool,
+    pub viewer_scroll: u16,
+    pub viewer_doc: usize,
     pub chosen: Option<usize>,
     pub amended: Option<String>,
     pub amend_field: usize,
@@ -255,9 +338,9 @@ impl App {
             verdict: None,
             journal: Vec::new(),
             show_journal: false,
-            show_preview: false,
-            preview_scroll: 0,
-            preview_target: 0,
+            show_viewer: false,
+            viewer_scroll: 0,
+            viewer_doc: 0,
             chosen: None,
             amended: None,
             amend_field: 0,
@@ -430,6 +513,12 @@ impl App {
                 Kind::Grant,
                 "decision grant active -- src/payments/** - migrations/** (task-scoped)",
             ));
+            if i == 1 {
+                self.events.push(ev(
+                    Kind::Edit,
+                    "write migrations/20261014_add_idempotency_keys.sql (+22) -- per the accepted decision",
+                ));
+            }
             self.journal
                 .push(ev(Kind::Decision, format!("{RECORD_ID} accepted -- {}", option.label)));
         }

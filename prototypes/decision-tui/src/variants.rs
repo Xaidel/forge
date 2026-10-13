@@ -15,6 +15,7 @@ use crate::script::{
     choice_at, App, Choice, Kind, LogEvent, Phase, VStage, AFFECTED, ARTIFACT, BLOCK_ATTEMPT,
     BLOCK_DIFF, BLOCK_REASON, BLOCK_STEER, CONTEXT, OPTIONS, RECORD_CLASSIFICATION,
     RECORD_CONFIRMATION, RECORD_DATE, RECORD_DRIVERS, RECORD_FILE, RECORD_ID, STATEMENT, WARNINGS,
+    WRITES,
 };
 
 pub fn variant_name(variant: usize) -> &'static str {
@@ -83,14 +84,14 @@ pub fn render_app(f: &mut Frame, app: &App) {
     if app.show_journal {
         render_journal(app, f, rows[0]);
     }
-    if app.show_preview {
-        render_preview(app, f, rows[0]);
+    if app.show_viewer {
+        render_viewer(app, f, rows[0]);
     }
 }
 
 fn render_chrome(app: &App, f: &mut Frame, area: Rect) {
     let label = format!(
-        " PROTOTYPE -- wayfinder #7 (throwaway) · variant {}/3: {} · [ ] switch · ctrl+r replay · space advance · h journal · q quit ",
+        " PROTOTYPE -- wayfinder #7 (throwaway) · variant {}/3: {} · [ ] switch · ctrl+r replay · space advance · v viewer · h journal · q quit ",
         app.variant + 1,
         variant_name(app.variant)
     );
@@ -171,13 +172,56 @@ fn meta_line(key: &str, value: &str) -> Line<'static> {
 }
 
 #[derive(Clone, Copy)]
-enum PreviewTarget {
+enum ViewerDoc {
     Record(usize),
-    BlockedWrite,
+    File(usize),
+    BlockedAttempt,
 }
 
 fn block_occurred(app: &App) -> bool {
     app.events.iter().any(|e| e.kind == Kind::Block)
+}
+
+fn has_event(app: &App, marker: &str) -> bool {
+    app.events.iter().any(|e| e.text.contains(marker))
+}
+
+/// The viewer pages available right now, in the order the story produced them.
+fn viewer_docs(app: &App) -> Vec<ViewerDoc> {
+    let mut ranked: Vec<(u8, ViewerDoc)> = Vec::new();
+    if has_event(app, WRITES[0].event_marker) {
+        ranked.push((1, ViewerDoc::File(0)));
+    }
+    if let Some(i) = preview_option(app) {
+        ranked.push((2, ViewerDoc::Record(i)));
+    }
+    if has_event(app, WRITES[2].event_marker) {
+        ranked.push((3, ViewerDoc::File(2)));
+    }
+    if has_event(app, WRITES[1].event_marker) {
+        ranked.push((4, ViewerDoc::File(1)));
+    }
+    if block_occurred(app) {
+        ranked.push((5, ViewerDoc::BlockedAttempt));
+    }
+    ranked.sort_by_key(|(rank, _)| *rank);
+    ranked.into_iter().map(|(_, doc)| doc).collect()
+}
+
+pub fn viewer_doc_count(app: &App) -> usize {
+    viewer_docs(app).len()
+}
+
+/// Default page on open: the record while a decision is open, the blocked write
+/// while execution is blocked, otherwise the most recent page.
+pub fn default_viewer_doc(app: &App) -> usize {
+    let docs = viewer_docs(app);
+    let wanted = match app.phase {
+        Phase::Paused => docs.iter().position(|d| matches!(d, ViewerDoc::Record(_))),
+        Phase::Blocked => docs.iter().position(|d| matches!(d, ViewerDoc::BlockedAttempt)),
+        _ => None,
+    };
+    wanted.unwrap_or_else(|| docs.len().saturating_sub(1))
 }
 
 fn chosen_index(app: &App) -> usize {
@@ -188,58 +232,49 @@ fn chosen_index(app: &App) -> usize {
         .unwrap_or(0)
 }
 
-fn preview_targets(app: &App) -> Vec<PreviewTarget> {
-    let mut targets = Vec::new();
-    if let Some(i) = preview_option(app) {
-        targets.push(PreviewTarget::Record(i));
-    }
-    if block_occurred(app) {
-        targets.push(PreviewTarget::BlockedWrite);
-    }
-    targets
+fn diff_lines(diff: &[(&'static str, &'static str)]) -> Vec<Line<'static>> {
+    diff.iter()
+        .map(|(prefix, text)| {
+            let style = match *prefix {
+                "@@" => Style::new().fg(Color::Cyan),
+                "+" => Style::new().fg(Color::Green),
+                "-" => Style::new().fg(Color::Red),
+                _ => Style::new().fg(Color::DarkGray),
+            };
+            Line::from(Span::styled(format!(" {prefix} {text}"), style))
+        })
+        .collect()
 }
 
-pub fn preview_target_count(app: &App) -> usize {
-    preview_targets(app).len()
-}
+fn render_viewer(app: &App, f: &mut Frame, area: Rect) {
+    let docs = viewer_docs(app);
+    let idx = app.viewer_doc.min(docs.len().saturating_sub(1));
+    let doc = docs.get(idx);
 
-/// Index of the target the inspector opens on: the blocked write takes focus
-/// while execution is actually blocked; otherwise the record.
-pub fn default_preview_target(app: &App) -> usize {
-    if app.phase == Phase::Blocked {
-        for (idx, target) in preview_targets(app).iter().enumerate() {
-            if matches!(target, PreviewTarget::BlockedWrite) {
-                return idx;
-            }
-        }
-    }
-    0
-}
-
-fn render_preview(app: &App, f: &mut Frame, area: Rect) {
-    let targets = preview_targets(app);
-    let idx = app.preview_target.min(targets.len().saturating_sub(1));
-    let target = targets.get(idx);
-
-    let (title, border) = match target {
-        Some(PreviewTarget::BlockedWrite) => (
+    let (title, border) = match doc {
+        Some(ViewerDoc::Record(_)) => (
+            format!(" record -- the doc this decision is writing ({RECORD_ID}) "),
+            Color::Cyan,
+        ),
+        Some(ViewerDoc::File(i)) => (
+            format!(" {} -- {} ({}) ", WRITES[*i].path, WRITES[*i].label, WRITES[*i].summary),
+            Color::Yellow,
+        ),
+        Some(ViewerDoc::BlockedAttempt) => (
             " blocked write -- what the agent tried to write ".to_string(),
             Color::Red,
         ),
-        Some(PreviewTarget::Record(_)) => (
-            format!(" record preview -- the doc this decision is writing ({RECORD_ID}) "),
-            Color::Cyan,
-        ),
-        None => (" content inspector ".to_string(), Color::DarkGray),
+        None => (" viewer ".to_string(), Color::DarkGray),
     };
+    let page = if docs.is_empty() { String::new() } else { format!(" · {} / {} ", idx + 1, docs.len()) };
 
-    let box_area = centered(area, 94, 92);
+    let box_area = centered(area, 96, 96);
     f.render_widget(Clear, box_area);
     let block = Block::bordered()
-        .title(Line::from(Span::styled(
-            title,
-            Style::new().fg(border).add_modifier(Modifier::BOLD),
-        )))
+        .title(Line::from(vec![
+            Span::styled(title, Style::new().fg(border).add_modifier(Modifier::BOLD)),
+            Span::styled(page, Style::new().fg(Color::DarkGray)),
+        ]))
         .border_style(Style::new().fg(border));
     let inner = block.inner(box_area);
     f.render_widget(block, box_area);
@@ -247,29 +282,52 @@ fn render_preview(app: &App, f: &mut Frame, area: Rect) {
         return;
     }
     let rows = Layout::vertical([Constraint::Min(1), Constraint::Length(1)]).areas::<2>(inner);
-    let lines = match target {
-        Some(PreviewTarget::BlockedWrite) => preview_blocked_lines(),
-        Some(PreviewTarget::Record(option_idx)) => preview_record_lines(app, *option_idx),
+    let lines = match doc {
+        Some(ViewerDoc::Record(i)) => preview_record_lines(app, *i),
+        Some(ViewerDoc::File(i)) => file_doc_lines(*i),
+        Some(ViewerDoc::BlockedAttempt) => preview_blocked_lines(),
         None => vec![Line::from(Span::styled(
-            " nothing to preview -- no record is proposed and nothing has been blocked.",
+            " nothing to view yet -- no record is proposed and nothing has been written.",
             Style::new().fg(Color::Gray),
         ))],
     };
     f.render_widget(
         Paragraph::new(lines)
             .wrap(Wrap { trim: false })
-            .scroll((app.preview_scroll, 0)),
+            .scroll((app.viewer_scroll, 0)),
         rows[0],
     );
     let mut hint = String::from(" ↑↓ scroll");
-    if targets.len() > 1 {
-        hint.push_str(" · ←→ switch doc");
+    if docs.len() > 1 {
+        hint.push_str(" · ←→ page");
     }
-    hint.push_str(" · p / esc close");
+    hint.push_str(" · v / esc close");
     f.render_widget(
         Paragraph::new(Span::styled(hint, Style::new().fg(Color::DarkGray))),
         rows[1],
     );
+}
+
+fn file_doc_lines(i: usize) -> Vec<Line<'static>> {
+    let write = &WRITES[i];
+    let mut lines: Vec<Line> = Vec::new();
+    lines.push(Line::from(Span::styled(
+        " WRITTEN by the agent during this run ",
+        Style::new().fg(Color::Green).add_modifier(Modifier::BOLD),
+    )));
+    lines.push(Line::from(vec![
+        Span::styled(format!(" {} ", write.label), Style::new().fg(Color::DarkGray)),
+        Span::styled(write.path.to_string(), Style::new()),
+        Span::styled(format!("   {}", write.summary), Style::new().fg(Color::DarkGray)),
+    ]));
+    lines.push(Line::from(""));
+    lines.extend(diff_lines(write.diff));
+    lines.push(Line::from(""));
+    lines.push(Line::from(Span::styled(
+        " ←→ pages through everything the run has written · ↑↓ scroll",
+        Style::new().fg(Color::DarkGray),
+    )));
+    lines
 }
 
 fn preview_record_lines(app: &App, i: usize) -> Vec<Line<'static>> {
@@ -396,15 +454,7 @@ fn preview_blocked_lines() -> Vec<Line<'static>> {
         Style::new().fg(Color::Gray),
     )));
     lines.push(Line::from(""));
-    for (prefix, text) in BLOCK_DIFF {
-        let style = match *prefix {
-            "@@" => Style::new().fg(Color::Cyan),
-            "+" => Style::new().fg(Color::Green),
-            "-" => Style::new().fg(Color::Red),
-            _ => Style::new().fg(Color::DarkGray),
-        };
-        lines.push(Line::from(Span::styled(format!(" {prefix} {text}"), style)));
-    }
+    lines.extend(diff_lines(BLOCK_DIFF));
     lines.push(Line::from(""));
     lines.push(Line::from(Span::styled(
         " the implementation conforms to the record -- not the other way around (PRD §8.2)",
@@ -452,7 +502,10 @@ fn v1_stream(app: &App, f: &mut Frame, area: Rect) {
     let state = match app.phase {
         Phase::Complete => "complete -- ctrl+r to replay".to_string(),
         Phase::Aborted => "aborted -- ctrl+r to replay".to_string(),
-        _ => format!("running -- space advances the scripted run · {} events", app.events.len()),
+        _ => format!(
+            "running -- space advances the scripted run · {} events · v viewer",
+            app.events.len()
+        ),
     };
     lines.push(Line::from(Span::styled(format!(" {state}"), Style::new().fg(Color::DarkGray))));
     f.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), area);
@@ -524,7 +577,7 @@ fn v1_select(app: &App, f: &mut Frame, area: Rect) {
         Span::styled(format!("   record: {ARTIFACT}"), Style::new().fg(Color::Blue)),
     ]));
     lines.push(Line::from(Span::styled(
-        "  ↑↓ move · 1-5 select · enter confirm",
+        "  ↑↓ move · 1-5 select · enter confirm · v viewer",
         Style::new().fg(Color::DarkGray),
     )));
     f.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), inner);
@@ -738,7 +791,7 @@ fn v1_block(f: &mut Frame, area: Rect) {
         ]),
         Line::from(""),
         Line::from(Span::styled(
-            "  enter -- acknowledge and continue · p -- inspect the blocked write",
+            "  enter -- acknowledge and continue · v -- view the blocked write",
             Style::new().fg(Color::DarkGray),
         )),
     ];
@@ -869,7 +922,7 @@ fn v2_select_lines(app: &App, lines: &mut Vec<Line<'static>>) {
         Style::new().fg(Color::Blue),
     )));
     lines.push(Line::from(Span::styled(
-        "    ↑↓ move · 1-5 select · enter confirm · d details · h journal",
+        "    ↑↓ move · 1-5 select · enter confirm · d details · v viewer",
         Style::new().fg(Color::DarkGray),
     )));
 }
@@ -960,7 +1013,7 @@ fn v2_block_lines(lines: &mut Vec<Line<'static>>) {
         Style::new().fg(Color::Yellow),
     )));
     lines.push(Line::from(Span::styled(
-        "    enter -- acknowledge (journaled) · p -- inspect the blocked write",
+        "    enter -- acknowledge (journaled) · v -- view the blocked write",
         Style::new().fg(Color::DarkGray),
     )));
 }
@@ -1082,7 +1135,7 @@ fn v3_panel(app: &App, f: &mut Frame, area: Rect) {
                     )));
                     lines.push(Line::from(""));
                     lines.push(Line::from(Span::styled(
-                        "  ↑↓ · 1-5 · enter · p preview",
+                        "  ↑↓ · 1-5 · enter · v viewer",
                         Style::new().fg(Color::DarkGray),
                     )));
                 }
@@ -1105,7 +1158,7 @@ fn v3_panel(app: &App, f: &mut Frame, area: Rect) {
                     }
                     lines.push(Line::from(""));
                     lines.push(Line::from(Span::styled(
-                        "  space -- acknowledge (journaled) · p preview",
+                        "  space -- acknowledge (journaled) · v viewer",
                         Style::new().fg(Color::DarkGray),
                     )));
                 }
@@ -1141,7 +1194,7 @@ fn v3_panel(app: &App, f: &mut Frame, area: Rect) {
                     ]));
                     lines.push(Line::from(""));
                     lines.push(Line::from(Span::styled(
-                        "  ↑↓/tab switch · enter submit · ctrl+u clear · p preview",
+                        "  ↑↓/tab switch · enter submit · ctrl+u clear · v viewer",
                         Style::new().fg(Color::DarkGray),
                     )));
                 }
@@ -1169,7 +1222,7 @@ fn v3_panel(app: &App, f: &mut Frame, area: Rect) {
             )));
             lines.push(Line::from(""));
             lines.push(Line::from(Span::styled(
-                "  enter -- acknowledge · p -- inspect the blocked write",
+                "  enter -- acknowledge · v -- view the blocked write",
                 Style::new().fg(Color::DarkGray),
             )));
         }
@@ -1210,7 +1263,7 @@ fn v3_panel(app: &App, f: &mut Frame, area: Rect) {
             }
             lines.push(Line::from(""));
             lines.push(Line::from(Span::styled(
-                "  h -- task journal · p -- record preview",
+                "  h -- task journal · v -- viewer",
                 Style::new().fg(Color::DarkGray),
             )));
         }
@@ -1376,34 +1429,52 @@ pub fn print_snapshot() {
             println!("{out}");
         }
     }
-    // Overlays (Mission is the picked base; preview/journal ride on top of it).
-    for (state, base, overlay) in [
-        ("modal-preview-select", "paused-select", "preview"),
-        ("modal-preview-written", "complete", "preview"),
-        ("modal-preview-blocked", "blocked", "preview"),
-        ("modal-journal", "complete", "journal"),
+    // Full-screen viewer states (Focus is the base) + the journal.
+    for state in [
+        "viewer-record-select",
+        "viewer-record-written",
+        "viewer-code-diff",
+        "viewer-blocked",
+        "journal",
     ] {
-        let mut app = App::new_with_variant(2);
-        seed(&mut app, base);
-        if state == "modal-preview-select" {
-            if let Some(v) = app.verdict.as_mut() {
-                v.highlight = 0;
+        let mut app = App::new_with_variant(0);
+        match state {
+            "viewer-record-select" => {
+                seed(&mut app, "paused-select");
+                app.viewer_doc = default_viewer_doc(&app);
+                app.show_viewer = true;
             }
-        }
-        if state == "modal-preview-written" {
-            app.amended = Some(
-                "Payment-capture idempotency keys are persisted in a dedicated table with a unique constraint, and are retained until retention expiry so replays after backup restores are still rejected.".into(),
-            );
-        }
-        match overlay {
-            "preview" => {
-                app.preview_target = default_preview_target(&app);
-                app.show_preview = true;
+            "viewer-record-written" => {
+                seed(&mut app, "complete");
+                app.amended = Some(
+                    "Payment-capture idempotency keys are persisted in a dedicated table with a unique constraint, and are retained until retention expiry so replays after backup restores are still rejected.".into(),
+                );
+                app.viewer_doc = viewer_docs(&app)
+                    .iter()
+                    .position(|d| matches!(d, ViewerDoc::Record(_)))
+                    .unwrap_or(0);
+                app.show_viewer = true;
             }
-            _ => app.show_journal = true,
+            "viewer-code-diff" => {
+                seed(&mut app, "complete");
+                app.viewer_doc = viewer_docs(&app)
+                    .iter()
+                    .position(|d| matches!(d, ViewerDoc::File(1)))
+                    .unwrap_or(0);
+                app.show_viewer = true;
+            }
+            "viewer-blocked" => {
+                seed(&mut app, "blocked");
+                app.viewer_doc = default_viewer_doc(&app);
+                app.show_viewer = true;
+            }
+            _ => {
+                seed(&mut app, "complete");
+                app.show_journal = true;
+            }
         }
         let out = render_to_string(&app, 104, 32);
-        println!("=============== variant 3 (Mission) · {state} ===============");
+        println!("=============== variant 1 (Focus) · {state} ===============");
         println!("{out}");
     }
 }

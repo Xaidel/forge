@@ -82,27 +82,27 @@ fn handle_global(app: &mut App, key: KeyEvent) -> bool {
         return true;
     }
 
-    if app.show_preview {
+    if app.show_viewer {
         match key.code {
-            KeyCode::Char('p') | KeyCode::Esc => app.show_preview = false,
+            KeyCode::Char('v') | KeyCode::Esc => app.show_viewer = false,
             KeyCode::Up | KeyCode::Char('k') => {
-                app.preview_scroll = app.preview_scroll.saturating_sub(1);
+                app.viewer_scroll = app.viewer_scroll.saturating_sub(1);
             }
             KeyCode::Down | KeyCode::Char('j') => {
-                app.preview_scroll = app.preview_scroll.saturating_add(1);
+                app.viewer_scroll = app.viewer_scroll.saturating_add(1);
             }
             KeyCode::Right | KeyCode::Tab => {
-                let count = variants::preview_target_count(app);
+                let count = variants::viewer_doc_count(app);
                 if count > 0 {
-                    app.preview_target = (app.preview_target + 1) % count;
-                    app.preview_scroll = 0;
+                    app.viewer_doc = (app.viewer_doc + 1) % count;
+                    app.viewer_scroll = 0;
                 }
             }
             KeyCode::Left => {
-                let count = variants::preview_target_count(app);
+                let count = variants::viewer_doc_count(app);
                 if count > 0 {
-                    app.preview_target = (app.preview_target + count - 1) % count;
-                    app.preview_scroll = 0;
+                    app.viewer_doc = (app.viewer_doc + count - 1) % count;
+                    app.viewer_scroll = 0;
                 }
             }
             _ => {}
@@ -125,13 +125,13 @@ fn handle_global(app: &mut App, key: KeyEvent) -> bool {
             }
             KeyCode::Char('h') => {
                 app.show_journal = true;
-                app.show_preview = false;
+                app.show_viewer = false;
                 return true;
             }
-            KeyCode::Char('p') => {
-                app.preview_target = variants::default_preview_target(app);
-                app.show_preview = true;
-                app.preview_scroll = 0;
+            KeyCode::Char('v') => {
+                app.viewer_doc = variants::default_viewer_doc(app);
+                app.show_viewer = true;
+                app.viewer_scroll = 0;
                 app.show_journal = false;
                 return true;
             }
