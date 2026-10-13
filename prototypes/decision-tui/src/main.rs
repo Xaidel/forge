@@ -91,6 +91,20 @@ fn handle_global(app: &mut App, key: KeyEvent) -> bool {
             KeyCode::Down | KeyCode::Char('j') => {
                 app.preview_scroll = app.preview_scroll.saturating_add(1);
             }
+            KeyCode::Right | KeyCode::Tab => {
+                let count = variants::preview_target_count(app);
+                if count > 0 {
+                    app.preview_target = (app.preview_target + 1) % count;
+                    app.preview_scroll = 0;
+                }
+            }
+            KeyCode::Left => {
+                let count = variants::preview_target_count(app);
+                if count > 0 {
+                    app.preview_target = (app.preview_target + count - 1) % count;
+                    app.preview_scroll = 0;
+                }
+            }
             _ => {}
         }
         return true;
@@ -115,6 +129,7 @@ fn handle_global(app: &mut App, key: KeyEvent) -> bool {
                 return true;
             }
             KeyCode::Char('p') => {
+                app.preview_target = variants::default_preview_target(app);
                 app.show_preview = true;
                 app.preview_scroll = 0;
                 app.show_journal = false;

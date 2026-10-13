@@ -17,14 +17,17 @@ Three structurally different variants of the same flow, switch with `[` / `]`:
 3. **Mission** — persistent panes: activity left, decision pane right, task
    journal on `h`.
 
-Iteration 2: Mission is the picked base, with a live **record preview** (`p`):
-the canonical ADR the decision is writing, tracking the highlighted option,
-showing the exact text that gets written byte-for-byte on confirm.
+Iteration 3: Mission is the picked base, with a **content inspector** (`p`):
+the canonical ADR the decision is writing (tracking the highlighted option,
+byte-for-byte what gets written on confirm) **and** the blocked write — the
+diff the agent tried to make to the accepted record when the gate denied it
+(PRD §8.2). `←→` switches docs inside the inspector.
 
 Keys: `[` / `]` switch variant · `space` advance the scripted run · `ctrl+r`
-replay · `h` open the task journal · `p` open the record preview (↑↓ scroll) ·
-`q` quit. Decisions: `↑↓` / `j k` move, `1-5` select, `enter` confirm, `space`
-acknowledges warnings, `d` (inline variant) expands details.
+replay · `h` open the task journal · `p` open the content inspector
+(`←→` switch doc, `↑↓` scroll) · `q` quit. Decisions: `↑↓` / `j k` move,
+`1-5` select, `enter` confirm, `space` acknowledges warnings, `d` (inline
+variant) expands details.
 
 Run it (Windows Terminal recommended):
 

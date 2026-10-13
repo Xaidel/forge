@@ -171,6 +171,27 @@ pub const BLOCK_REASON: &str =
     "agent writes under /spec/** are never allowed -- records are core-written from the approved verdict";
 pub const BLOCK_STEER: &str = "implement to the accepted TDD; the record is not agent-editable";
 
+/// The content the agent tried to write, as a diff for the inspector.
+/// Finishing implementation, it tried to bring the accepted record into line
+/// with its code (PRD §8.2) -- denied before anything was written.
+pub const BLOCK_DIFF: &[(&str, &str)] = &[
+    ("@@", "header"),
+    (" ", "ID: ADR-0007"),
+    (
+        "+",
+        "Implementation: src/payments/capture.rs · migrations/20261014_add_idempotency_keys.sql",
+    ),
+    ("@@", "## Decision"),
+    (
+        "-",
+        "Payment-capture idempotency keys are persisted in a dedicated table with a unique constraint.",
+    ),
+    (
+        "+",
+        "Payment-capture idempotency keys are persisted in a dedicated table with a unique constraint, using a partial index on (account_id, idempotency_key) so soft-deleted captures are excluded.",
+    ),
+];
+
 pub enum Beat {
     Log(Kind, &'static str),
     Raise,
@@ -213,6 +234,7 @@ pub struct App {
     pub show_journal: bool,
     pub show_preview: bool,
     pub preview_scroll: u16,
+    pub preview_target: usize,
     pub chosen: Option<usize>,
     pub note: String,
     pub v2_detail: bool,
@@ -233,6 +255,7 @@ impl App {
             show_journal: false,
             show_preview: false,
             preview_scroll: 0,
+            preview_target: 0,
             chosen: None,
             note: String::new(),
             v2_detail: false,

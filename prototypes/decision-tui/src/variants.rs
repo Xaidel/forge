@@ -13,8 +13,8 @@ use ratatui::Frame;
 
 use crate::script::{
     choice_at, App, Choice, Kind, LogEvent, Phase, VStage, AFFECTED, ARTIFACT, BLOCK_ATTEMPT,
-    BLOCK_REASON, BLOCK_STEER, CONTEXT, OPTIONS, RECORD_CLASSIFICATION, RECORD_CONFIRMATION,
-    RECORD_DATE, RECORD_DRIVERS, RECORD_FILE, RECORD_ID, STATEMENT, WARNINGS,
+    BLOCK_DIFF, BLOCK_REASON, BLOCK_STEER, CONTEXT, OPTIONS, RECORD_CLASSIFICATION,
+    RECORD_CONFIRMATION, RECORD_DATE, RECORD_DRIVERS, RECORD_FILE, RECORD_ID, STATEMENT, WARNINGS,
 };
 
 pub fn variant_name(variant: usize) -> &'static str {
@@ -170,46 +170,103 @@ fn meta_line(key: &str, value: &str) -> Line<'static> {
     ])
 }
 
+#[derive(Clone, Copy)]
+enum PreviewTarget {
+    Record(usize),
+    BlockedWrite,
+}
+
+fn block_occurred(app: &App) -> bool {
+    app.events.iter().any(|e| e.kind == Kind::Block)
+}
+
+fn preview_targets(app: &App) -> Vec<PreviewTarget> {
+    let mut targets = Vec::new();
+    if let Some(i) = preview_option(app) {
+        targets.push(PreviewTarget::Record(i));
+    }
+    if block_occurred(app) {
+        targets.push(PreviewTarget::BlockedWrite);
+    }
+    targets
+}
+
+pub fn preview_target_count(app: &App) -> usize {
+    preview_targets(app).len()
+}
+
+/// Index of the target the inspector opens on: the blocked write takes focus
+/// while execution is actually blocked; otherwise the record.
+pub fn default_preview_target(app: &App) -> usize {
+    if app.phase == Phase::Blocked {
+        for (idx, target) in preview_targets(app).iter().enumerate() {
+            if matches!(target, PreviewTarget::BlockedWrite) {
+                return idx;
+            }
+        }
+    }
+    0
+}
+
 fn render_preview(app: &App, f: &mut Frame, area: Rect) {
+    let targets = preview_targets(app);
+    let idx = app.preview_target.min(targets.len().saturating_sub(1));
+    let target = targets.get(idx);
+
+    let (title, border) = match target {
+        Some(PreviewTarget::BlockedWrite) => (
+            " blocked write -- what the agent tried to write ".to_string(),
+            Color::Red,
+        ),
+        Some(PreviewTarget::Record(_)) => (
+            format!(" record preview -- the doc this decision is writing ({RECORD_ID}) "),
+            Color::Cyan,
+        ),
+        None => (" content inspector ".to_string(), Color::DarkGray),
+    };
+
     let box_area = centered(area, 94, 92);
     f.render_widget(Clear, box_area);
     let block = Block::bordered()
         .title(Line::from(Span::styled(
-            format!(" record preview -- the doc this decision is writing ({RECORD_ID}) "),
-            Style::new().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+            title,
+            Style::new().fg(border).add_modifier(Modifier::BOLD),
         )))
-        .border_style(Style::new().fg(Color::Cyan));
+        .border_style(Style::new().fg(border));
     let inner = block.inner(box_area);
     f.render_widget(block, box_area);
     if inner.height < 3 {
         return;
     }
     let rows = Layout::vertical([Constraint::Min(1), Constraint::Length(1)]).areas::<2>(inner);
+    let lines = match target {
+        Some(PreviewTarget::BlockedWrite) => preview_blocked_lines(),
+        Some(PreviewTarget::Record(option_idx)) => preview_record_lines(app, *option_idx),
+        None => vec![Line::from(Span::styled(
+            " nothing to preview -- no record is proposed and nothing has been blocked.",
+            Style::new().fg(Color::Gray),
+        ))],
+    };
     f.render_widget(
-        Paragraph::new(preview_lines(app))
+        Paragraph::new(lines)
             .wrap(Wrap { trim: false })
             .scroll((app.preview_scroll, 0)),
         rows[0],
     );
+    let mut hint = String::from(" ↑↓ scroll");
+    if targets.len() > 1 {
+        hint.push_str(" · ←→ switch doc");
+    }
+    hint.push_str(" · p / esc close");
     f.render_widget(
-        Paragraph::new(Span::styled(
-            " ↑↓ scroll · p / esc close",
-            Style::new().fg(Color::DarkGray),
-        )),
+        Paragraph::new(Span::styled(hint, Style::new().fg(Color::DarkGray))),
         rows[1],
     );
 }
 
-fn preview_lines(app: &App) -> Vec<Line<'static>> {
+fn preview_record_lines(app: &App, i: usize) -> Vec<Line<'static>> {
     let mut lines: Vec<Line> = Vec::new();
     let written = app.phase != Phase::Paused;
-    let Some(i) = preview_option(app) else {
-        lines.push(Line::from(Span::styled(
-            " no record will be written -- Reject and Abort produce a journal entry only.",
-            Style::new().fg(Color::Gray),
-        )));
-        return lines;
-    };
     let option = &OPTIONS[i];
 
     let banner = if written {
@@ -294,6 +351,47 @@ fn preview_lines(app: &App) -> Vec<Line<'static>> {
     }
     lines.push(Line::from(Span::styled(
         " on confirm, execution resumes within the grant: src/payments/** · migrations/**",
+        Style::new().fg(Color::DarkGray),
+    )));
+    lines
+}
+
+fn preview_blocked_lines() -> Vec<Line<'static>> {
+    let mut lines: Vec<Line> = Vec::new();
+    lines.push(Line::from(Span::styled(
+        " BLOCKED -- attempt denied at the gate; nothing was written ",
+        Style::new().fg(Color::Red).add_modifier(Modifier::BOLD),
+    )));
+    lines.push(Line::from(vec![
+        Span::styled(" attempted: ", Style::new().fg(Color::DarkGray)),
+        Span::styled(BLOCK_ATTEMPT.to_string(), Style::new()),
+    ]));
+    lines.push(Line::from(vec![
+        Span::styled(" reason:    ", Style::new().fg(Color::DarkGray)),
+        Span::styled(BLOCK_REASON.to_string(), Style::new().fg(Color::Red)),
+    ]));
+    lines.push(Line::from(vec![
+        Span::styled(" steer:     ", Style::new().fg(Color::DarkGray)),
+        Span::styled(BLOCK_STEER.to_string(), Style::new().fg(Color::Yellow)),
+    ]));
+    lines.push(Line::from(""));
+    lines.push(Line::from(Span::styled(
+        " what the agent tried to write (changed hunks; rest unchanged):",
+        Style::new().fg(Color::Gray),
+    )));
+    lines.push(Line::from(""));
+    for (prefix, text) in BLOCK_DIFF {
+        let style = match *prefix {
+            "@@" => Style::new().fg(Color::Cyan),
+            "+" => Style::new().fg(Color::Green),
+            "-" => Style::new().fg(Color::Red),
+            _ => Style::new().fg(Color::DarkGray),
+        };
+        lines.push(Line::from(Span::styled(format!(" {prefix} {text}"), style)));
+    }
+    lines.push(Line::from(""));
+    lines.push(Line::from(Span::styled(
+        " the implementation conforms to the record -- not the other way around (PRD §8.2)",
         Style::new().fg(Color::DarkGray),
     )));
     lines
@@ -586,7 +684,7 @@ fn v1_block(f: &mut Frame, area: Rect) {
         ]),
         Line::from(""),
         Line::from(Span::styled(
-            "  enter -- acknowledge and continue",
+            "  enter -- acknowledge and continue · p -- inspect the blocked write",
             Style::new().fg(Color::DarkGray),
         )),
     ];
@@ -773,7 +871,7 @@ fn v2_block_lines(lines: &mut Vec<Line<'static>>) {
         Style::new().fg(Color::Yellow),
     )));
     lines.push(Line::from(Span::styled(
-        "    enter -- acknowledge (journaled)",
+        "    enter -- acknowledge (journaled) · p -- inspect the blocked write",
         Style::new().fg(Color::DarkGray),
     )));
 }
@@ -963,7 +1061,7 @@ fn v3_panel(app: &App, f: &mut Frame, area: Rect) {
             )));
             lines.push(Line::from(""));
             lines.push(Line::from(Span::styled(
-                "  enter -- acknowledge",
+                "  enter -- acknowledge · p -- inspect the blocked write",
                 Style::new().fg(Color::DarkGray),
             )));
         }
@@ -1147,6 +1245,7 @@ pub fn print_snapshot() {
     for (state, base, overlay) in [
         ("modal-preview-select", "paused-select", "preview"),
         ("modal-preview-written", "complete", "preview"),
+        ("modal-preview-blocked", "blocked", "preview"),
         ("modal-journal", "complete", "journal"),
     ] {
         let mut app = App::new_with_variant(2);
@@ -1157,7 +1256,10 @@ pub fn print_snapshot() {
             }
         }
         match overlay {
-            "preview" => app.show_preview = true,
+            "preview" => {
+                app.preview_target = default_preview_target(&app);
+                app.show_preview = true;
+            }
             _ => app.show_journal = true,
         }
         let out = render_to_string(&app, 104, 32);
