@@ -415,7 +415,21 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, [tabindex]:fo
 .t-chat-hint { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-top: 5px; color: #6f8f76; font-size: 10.5px; }
 .t-chat-hint span:last-child { color: #527361; }
 .t-activity { flex: none; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 4px 16px; background: #06100a; border-top: 1px solid #1d3527; color: #9fc3aa; font-size: 10.5px; }
-.t-activity .t-dim:last-child { margin-left: auto; }
+.t-activity > .t-dim:last-child { margin-left: auto; }
+.t-activity-actions { margin-left: auto; display: flex; gap: 10px; align-items: center; }
+.t-activity-actions .t-dim { margin-left: 0; }
+.t-cancel-confirm { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 7px; }
+.t-cancelled { border-left-color: #a34a43; }
+.t-model-panel { border-left: 2px solid #7cc7ff; padding: 6px 0 6px 12px; margin-top: 8px; font-size: 11.5px; }
+.t-model-head { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; font-size: 10.5px; letter-spacing: .04em; margin-bottom: 5px; }
+.t-model-row { display: grid; grid-template-columns: 72px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 3px 0; }
+.t-model-row > span:first-child { color: #6f8f76; text-transform: uppercase; letter-spacing: .08em; font-size: 9.5px; }
+.t-model-row b { color: #e2f4e7; font-weight: 500; }
+.t-model-row > span:last-child { color: #9fc3aa; font-size: 10.5px; }
+.t-meter { display: inline-block; width: 150px; max-width: 100%; height: 5px; background: #1d3527; }
+.t-meter i { display: block; height: 100%; background: #7cc7ff; }
+.t-model-slots { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin-top: 6px; }
+.t-model-slots .active { color: #7cc7ff; text-decoration: none; font-weight: 600; }
 .t-decision-chat, .t-receipt-chat, .t-parked-chat, .t-locked-chat, .t-attest-chat, .t-attest-final-chat { border-left: 2px solid #3c5a47; padding: 6px 0 6px 12px; margin-top: 8px; }
 .t-receipt-chat { border-left-color: #4f9c67; }
 .t-parked-chat, .t-locked-chat { border-left-color: #6e5a2f; }
@@ -1038,8 +1052,9 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, [tabindex]:fo
     <li><code>/help</code> · <code>/status</code> · <code>/pause</code> · <code>/resume</code> · <code>/review</code> · <code>/attest</code> · <code>/back</code></li>
     <li><code>/diff</code> · <code>/decisions</code> · <code>/assumptions</code> · <code>/checks</code> · <code>/evidence</code></li>
     <li><code>/defer</code> · <code>/delegate</code> · <code>/reject</code> · <code>/reopen</code> · <code>/stop</code></li>
-    <li>Enter sends; Shift+Enter adds a newline. Esc pauses when the input is not focused. The <code>? commands</code> link prints the list.</li>
-    <li>The model/context/cost line is a sample; provider choice is ticket #10.</li>
+    <li><code>/model</code> or <code>/cost</code> opens the model/cost panel; <code>/cancel</code> asks for confirmation before abandoning the task.</li>
+    <li>Enter sends; Shift+Enter adds a newline. Esc pauses when the input is not focused; Ctrl-C cancels (with confirmation) when there is no selected text. The <code>? commands</code> link prints the list.</li>
+    <li>Pause is resumable; cancel is terminal. Cancel keeps the branch and worktree and merges nothing. The model panel shows provider (still open), slot, context, session cost, and budget; the values are samples.</li>
   </ul>
 
   <h3>B · Local web cockpit</h3>
@@ -1377,7 +1392,10 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, [tabindex]:fo
     stateOpen: false,
     notesOpen: false,
     done: false,
-    stopped: false
+    stopped: false,
+    cancelled: false,
+    pendingCancel: false,
+    modelSlot: 'primary'
   });
 
   let state = fresh();
@@ -1624,6 +1642,8 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, [tabindex]:fo
         <tr><th>attestation</th><td>${state.attestation.grades.map((g, i) => 'Q' + (i + 1) + ': ' + (g || '—') + ' (' + state.attestation.failures[i] + ' fail)').join('<br>')}</td></tr>
         <tr><th>final</th><td>${state.done ? 'done' : state.stopped ? 'stopped' : state.attestation.finalChecked ? 'checkbox checked' : 'not attested'}</td></tr>
         <tr><th>away</th><td>${state.away ? 'yes · ' + esc(state.awayFrom) : 'no'}</td></tr>
+        <tr><th>cancel</th><td>${state.cancelled ? 'cancelled' : state.pendingCancel ? 'confirming' : 'no'}</td></tr>
+        <tr><th>model</th><td>${esc(state.modelSlot)}</td></tr>
         <tr><th>modal</th><td>${esc(state.modal || '—')}</td></tr>
         <tr><th>ledger</th><td>${state.ledger.length} ${state.ledger.length === 1 ? 'entry' : 'entries'}</td></tr>
       </table>
@@ -1665,7 +1685,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, [tabindex]:fo
   }
 
   function renderAChatHead() {
-    const gate = state.done ? '—' : state.decision.status === 'pending' ? DECISION.id : state.flow;
+    const gate = state.done || state.cancelled ? '—' : state.decision.status === 'pending' ? DECISION.id : state.flow;
     return `<div class="t-chat-head">
       <div class="t-chat-head-main">
         <div class="t-chat-title"><span class="t-green">${TASK.id}</span> ${esc(TASK.title)}</div>
@@ -1677,17 +1697,22 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, [tabindex]:fo
 
   function renderAActivity() {
     let text;
-    if (state.away) text = 'paused · waiting for you';
+    if (state.cancelled) text = 'cancelled · branch retained';
+    else if (state.pendingCancel) text = 'waiting for cancel confirmation';
+    else if (state.away) text = 'paused · waiting for you';
     else if (state.done) text = 'done · branch unmerged';
     else if (state.stopped) text = 'stopped · nothing merged';
     else if (!canReview() && (state.flow === 'review' || state.flow === 'attest')) text = 'locked · waiting on D-3';
     else if (state.flow === 'decision') text = state.decision.status === 'resolved' ? 'waiting for you · type review' : 'waiting for a decision · D-3';
     else if (state.flow === 'review') text = 'waiting for review · 5 checks green';
     else text = allPassed() ? 'waiting for attestation' : `waiting for your answer · Q${Math.min(state.attestation.qIndex + 1, 3)}/3`;
-    return `<div class="t-activity"><span class="t-green">forge</span><span>${esc(text)}</span><span class="t-dim">· model configured · 18.4k ctx · $0.12</span><span class="t-dim">esc pause</span></div>`;
+    const cancel = !state.done && !state.cancelled && !state.stopped;
+    return `<div class="t-activity"><span class="t-green">forge</span><span>${esc(text)}</span><button class="t-link" data-action="model-panel">· model ${esc(state.modelSlot)} · 18.4k ctx · $0.12</button><span class="t-activity-actions">${cancel ? `<button class="t-link" data-action="request-cancel">cancel</button>` : ''}<span class="t-dim">ctrl-c cancel · esc pause</span></span></div>`;
   }
 
   function renderATermFoot() {
+    if (state.cancelled) return `<span>forge · ${TASK.id}</span><span>cancelled · branch retained</span><span>← → switch variant</span>`;
+    if (state.pendingCancel) return `<span>forge · ${TASK.id}</span><span>cancel confirmation</span><span>← → switch variant</span>`;
     if (state.away) return `<span>forge · ${TASK.id}</span><span>waiting · no timeout</span><span>← → switch variant</span>`;
     if (state.done) return `<span>forge · ${TASK.id}</span><span>done · branch unmerged</span><span>← → switch variant</span>`;
     if (state.stopped) return `<span>forge · ${TASK.id}</span><span>stopped · nothing merged</span><span>← → switch variant</span>`;
@@ -1706,6 +1731,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, [tabindex]:fo
   }
 
   function renderChatMsg(m) {
+    if (m.panel === 'model') return chatMsg(m.role, m.text, m.time || 'now', renderModelPanel());
     return chatMsg(m.role, m.text, m.time || 'now', m.html || '');
   }
 
@@ -1730,6 +1756,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, [tabindex]:fo
 
   function renderAChat() {
     if (state.done) return renderSeed('done') + state.chat.map(renderChatMsg).join('') + chatMsg('forge', 'T-042 is done and attested by you.', '14:12', renderDoneCard());
+    if (state.cancelled) return renderSeed(state.decision.status === 'resolved' ? 'attest' : 'decision') + state.chat.map(renderChatMsg).join('') + chatMsg('forge', 'T-042 was cancelled by you. Nothing merged.', 'now', renderCancelledCard());
     if (state.away) {
       return renderSeed('decision') + chatMsg('system', 'Forge is waiting for you. The task is paused at D-3; closing the terminal is safe. There is no timeout.', 'now', renderAwayCard());
     }
@@ -1739,8 +1766,9 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, [tabindex]:fo
     }
     if (state.flow === 'decision') {
       let out = renderSeed('decision');
+      out += renderDecisionRequest();
       out += state.chat.map(renderChatMsg).join('');
-      out += renderDecisionMessage();
+      out += renderDecisionOutcome();
       return out;
     }
     if (state.flow === 'review') {
@@ -1758,7 +1786,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, [tabindex]:fo
   }
 
   function renderAChatInput() {
-    const disabled = state.done || state.away || state.stopped || (state.flow === 'attest' && allPassed());
+    const disabled = state.done || state.cancelled || state.away || state.stopped || (state.flow === 'attest' && allPassed());
     const hint = chatHint();
     return `<div class="t-chat-input">
       <span class="t-chat-prompt">you ›</span>
@@ -1769,6 +1797,8 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, [tabindex]:fo
   }
 
   function chatHint() {
+    if (state.cancelled) return 'cancelled — start over above';
+    if (state.pendingCancel) return 'type yes to cancel, or anything else to keep going';
     if (state.done) return 'session done — start over above';
     if (state.away) return 'forge is waiting — resume above';
     if (state.stopped) return 'stopped — reopen review above';
@@ -1784,8 +1814,13 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, [tabindex]:fo
     return 'answer in your own words, or type evidence / stop / back';
   }
 
-  function renderDecisionMessage() {
+  function renderDecisionRequest() {
+    return chatMsg('forge', 'I need a decision before I write the migration.', '14:06', renderDecisionCard());
+  }
+
+  function renderDecisionOutcome() {
     const d = state.decision;
+    if (state.chat.some(m => m.kind === 'decision-outcome')) return '';
     if (d.status === 'resolved') {
       return chatMsg('forge', 'Recorded D-3 and resumed step 3. The ledger entry is in your words.', d.recordedAt || '14:06', renderReceiptCard());
     }
@@ -1797,7 +1832,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, [tabindex]:fo
           : 'D-3 went back to planning. Execution is blocked until the plan is revised.';
       return chatMsg('forge', text, 'now', renderParkedCard());
     }
-    return chatMsg('forge', 'I need a decision before I write the migration.', '14:06', renderDecisionCard());
+    return '';
   }
 
   function renderDecisionCard() {
@@ -1969,6 +2004,28 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, [tabindex]:fo
       <div class="t-decision-meta"><span>${esc(TASK.branch)} — unmerged</span><span>${DECISION.id} recorded · attestation not recorded</span></div>
       <div class="t-receipt-actions">type reopen to try again <button class="t-link" data-action="reopen-attest">reopen</button><button class="t-link" data-action="flow" data-flow="review">review</button></div>
     </div>`);
+  }
+
+  function renderCancelledCard() {
+    return `<div class="t-parked-chat t-cancelled">
+      <div class="t-receipt-head"><span class="t-red">${TASK.id} CANCELLED</span><span class="t-dim">abandoned by you</span></div>
+      <p class="t-decision-lede">The task was cancelled. Nothing merged; no attestation was recorded.</p>
+      <div class="t-decision-meta"><span>branch ${esc(TASK.branch)} — retained</span><span>worktree .forge/worktrees/${TASK.id} — kept</span><span>${DECISION.id} — recorded, unmerged</span></div>
+      <div class="t-receipt-actions">start a new task <button class="t-link" data-action="reset">start over</button></div>
+    </div>`;
+  }
+
+  function renderModelPanel() {
+    const slot = state.modelSlot;
+    return `<div class="t-model-panel">
+      <div class="t-model-head"><span class="t-amber">Model &amp; cost</span><span class="t-dim">sample values</span></div>
+      <div class="t-model-row"><span>provider</span><b>configured</b><span class="t-dim">provider list is still open</span></div>
+      <div class="t-model-row"><span>slot</span><b>${esc(slot)}</b><span class="t-dim">routing is stubbed in this prototype</span></div>
+      <div class="t-model-row"><span>context</span><span class="t-meter"><i style="width:9%"></i></span><span>18.4k / 200k</span></div>
+      <div class="t-model-row"><span>session</span><b>$0.12</b><span class="t-dim">42.1k in · 8.1k out</span></div>
+      <div class="t-model-row"><span>budget</span><span class="t-meter"><i style="width:6%"></i></span><span>$0.12 / $2.00 soft · $5.00 hard</span></div>
+      <div class="t-model-slots">${['primary', 'fast', 'local'].map(s => `<button class="t-link ${s === slot ? 'active' : ''}" data-action="model-slot" data-slot="${s}">${s}</button>`).join('')}<span class="t-dim">prototype switch · provider routing is still open</span></div>
+    </div>`;
   }
 
   function renderLockedCard(what) {
@@ -2802,6 +2859,7 @@ resume   forge resume ${TASK.id}
     state.modal = null;
     state.chat = [];
     state.reviewShown = [];
+    state.pendingCancel = false;
     state.scrollTo = null;
     state.scrollBottom = false;
     resetScroll = true;
@@ -2826,6 +2884,7 @@ resume   forge resume ${TASK.id}
     state.openAnn = null;
     state.chat = [];
     state.reviewShown = [];
+    state.pendingCancel = false;
     state.scrollTo = flow === 'review' ? 'chat-review' : flow === 'attest' ? (allPassed() ? 'chat-attest-final' : 'chat-attest') : null;
     state.scrollBottom = false;
     resetScroll = true;
@@ -2833,6 +2892,7 @@ resume   forge resume ${TASK.id}
   }
 
   function simulateAway() {
+    if (state.cancelled || state.pendingCancel || state.done) return;
     state.awayFrom = state.flow;
     state.away = true;
     state.modal = null;
@@ -2844,6 +2904,37 @@ resume   forge resume ${TASK.id}
     state.away = false;
     state.flow = state.awayFrom;
     resetScroll = true;
+    render();
+  }
+
+  function requestCancel(source) {
+    if (state.done || state.cancelled || state.pendingCancel) return;
+    state.pendingCancel = true;
+    if (source !== 'chat') state.chat.push({ role: 'you', text: '/cancel', time: 'now' });
+    state.chat.push({
+      role: 'forge',
+      text: `Cancel ${TASK.id}? This abandons the task. The branch and worktree are kept; nothing merges. Type yes to confirm, or anything else to keep going.`,
+      time: 'now',
+      html: `<div class="t-cancel-confirm"><button class="t-link" data-action="confirm-cancel">yes, cancel</button><button class="t-link" data-action="dismiss-cancel">keep running</button></div>`
+    });
+    state.scrollBottom = true;
+    render();
+  }
+
+  function confirmCancel() {
+    state.pendingCancel = false;
+    state.cancelled = true;
+    state.done = false;
+    state.stopped = false;
+    state.away = false;
+    state.scrollBottom = true;
+    render();
+  }
+
+  function dismissCancel() {
+    state.pendingCancel = false;
+    say('Keeping the task. Nothing changed.');
+    state.scrollBottom = true;
     render();
   }
 
@@ -2910,18 +3001,26 @@ resume   forge resume ${TASK.id}
   }
 
   function sayHelp() {
-    say('Commands: 1–3 choose · a rationale records · defer / delegate / reject · review · attest · diff / decisions / assumptions / checks · evidence · stop / pause / resume / reopen · status');
+    say('Commands: 1–3 choose · a rationale records · defer / delegate / reject · review · attest · diff / decisions / assumptions / checks · evidence · model / cost · cancel · stop / pause / resume / reopen · status');
   }
 
   function statusText() {
     const gate = state.done ? '—' : state.decision.status === 'pending' ? 'D-3' : state.flow;
-    return `${TASK.id} · ${taskStateLabel()} · gate ${gate} · ${TASK.branch} · ${state.ledger.length} ledger ${state.ledger.length === 1 ? 'entry' : 'entries'} · model configured · 18.4k ctx`;
+    return `${TASK.id} · ${taskStateLabel()} · gate ${gate} · ${TASK.branch} · ${state.ledger.length} ledger ${state.ledger.length === 1 ? 'entry' : 'entries'} · model ${state.modelSlot} · 18.4k ctx`;
   }
 
   function handleChat(text) {
     const t = text.trim().replace(/^\//, '');
+    if (state.pendingCancel) {
+      if (/^(yes|y|confirm|cancel)\b/i.test(t)) { confirmCancel(); return; }
+      state.pendingCancel = false;
+      say('Keeping the task. Nothing changed.');
+      return;
+    }
+    if (/^(cancel|abort)\b/i.test(t)) { requestCancel('chat'); return; }
     if (/^help\b/i.test(t)) { sayHelp(); return; }
     if (/^status\b/i.test(t)) { say(statusText()); return; }
+    if (/^(model|cost)\b/i.test(t)) { state.chat.push({ role: 'forge', text: 'Model & cost', panel: 'model', time: 'now' }); return; }
     if (/^pause\b/i.test(t)) { simulateAway(); return; }
     if (/^resume\b/i.test(t)) { resumeAway(); return; }
     if (state.flow === 'decision') {
@@ -2959,25 +3058,26 @@ resume   forge resume ${TASK.id}
       if (/^(defer|d)\b/i.test(t)) {
         d.status = 'deferred';
         d.deferWhen = 'when I say';
-        say('D-3 is deferred. The task is paused; type reopen when you want to pick it back up.');
+        state.chat.push({ kind: 'decision-outcome', role: 'forge', text: 'D-3 is deferred. The task is paused; type reopen when you want to pick it back up.', html: renderParkedCard(), time: 'now' });
         return;
       }
       if (/^(delegate|g)\b/i.test(t)) {
         d.status = 'delegated';
         d.delegateScope = 'research the options';
-        say('I will research the options and return with evidence. The decision is still yours.');
+        state.chat.push({ kind: 'decision-outcome', role: 'forge', text: 'I will research the options and return with evidence. The decision is still yours.', html: renderParkedCard(), time: 'now' });
         return;
       }
       if (/^(reject|x)\b/i.test(t)) {
         d.status = 'rejected';
         d.rejectReason = 'not needed for this task';
-        say('Sent back to planning. Execution is blocked until the plan is revised.');
+        state.chat.push({ kind: 'decision-outcome', role: 'forge', text: 'Sent back to planning. Execution is blocked until the plan is revised.', html: renderParkedCard(), time: 'now' });
         return;
       }
       if (d.choice) {
         d.rationale = t;
         const ok = recordDecisionState();
         if (!ok) say(d.error || 'I could not record that.');
+        else state.chat.push({ kind: 'decision-outcome', role: 'forge', text: 'Recorded D-3 and resumed step 3. The ledger entry is in your words.', html: renderReceiptCard(), time: 'now' });
         return;
       }
       say('Choose an option first: 1, 2, or 3. You can also say defer, delegate, or reject.');
@@ -3100,9 +3200,12 @@ resume   forge resume ${TASK.id}
     }
     if (state.variant === 'A') {
       state.chat.push({ role: 'you', text: `${m} — ${value}${note ? ' — ' + note : ''}`, time: 'now' });
-      if (m === 'defer') say('D-3 is deferred. The task is paused; type reopen when you want to pick it back up.');
-      else if (m === 'delegate') say('I will research the options and return with evidence. The decision is still yours.');
-      else say('Sent back to planning. Execution is blocked until the plan is revised.');
+      const text = m === 'defer'
+        ? 'D-3 is deferred. The task is paused; type reopen when you want to pick it back up.'
+        : m === 'delegate'
+          ? 'I will research the options and return with evidence. The decision is still yours.'
+          : 'Sent back to planning. Execution is blocked until the plan is revised.';
+      state.chat.push({ kind: 'decision-outcome', role: 'forge', text, html: renderParkedCard(), time: 'now' });
       state.scrollBottom = true;
     }
     state.modal = null;
@@ -3258,6 +3361,20 @@ resume   forge resume ${TASK.id}
         state.scrollBottom = true;
         render();
         break;
+      case 'request-cancel': requestCancel('button'); break;
+      case 'confirm-cancel': confirmCancel(); break;
+      case 'dismiss-cancel': dismissCancel(); break;
+      case 'model-panel':
+        state.chat.push({ role: 'forge', text: 'Model & cost', panel: 'model', time: 'now' });
+        state.scrollBottom = true;
+        render();
+        break;
+      case 'model-slot':
+        state.modelSlot = el.dataset.slot;
+        state.chat.push({ role: 'forge', text: `Model slot: ${state.modelSlot}. Routing is stubbed; the provider list is still open.`, time: 'now' });
+        state.scrollBottom = true;
+        render();
+        break;
       case 'focus-room': {
         const target = document.querySelector('.c-stage textarea, .b-main textarea, .c-attest-final .c-check, .b-attest-final .b-check');
         if (target) {
@@ -3288,6 +3405,14 @@ resume   forge resume ${TASK.id}
   });
 
   document.addEventListener('keydown', e => {
+    if (e.ctrlKey && e.key === 'c' && !e.shiftKey && !e.altKey) {
+      const selected = window.getSelection().toString();
+      if (!selected && !state.done && !state.cancelled && !state.modal && !state.stateOpen && !state.notesOpen) {
+        e.preventDefault();
+        requestCancel('keyboard');
+        return;
+      }
+    }
     if (e.target.matches('[data-bind="chat"]') && e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       sendChat();
@@ -3296,7 +3421,7 @@ resume   forge resume ${TASK.id}
     if (e.key === 'Escape') {
       if (state.modal) { state.modal = null; render(); return; }
       if (state.stateOpen || state.notesOpen) { state.stateOpen = false; state.notesOpen = false; render(); return; }
-      if (!e.target.closest('input, textarea, select, [contenteditable]') && !state.away && !state.done && !state.stopped) {
+      if (!e.target.closest('input, textarea, select, [contenteditable]') && !state.away && !state.done && !state.stopped && !state.pendingCancel && !state.cancelled) {
         simulateAway();
         return;
       }
