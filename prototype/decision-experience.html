@@ -1,0 +1,2873 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Forge — decision &amp; review experience (prototype)</title>
+<!--
+  PROTOTYPE — throwaway code that answers one question.
+
+  Question (wayfinder ticket #4): What does the developer see when Forge stops for a
+  decision, and how do they review and attest the result? Which surfaces host the
+  four gates: terminal-only, local web, or both?
+
+  Three variants, switchable with ?variant=A|B|C (or the bottom bar / arrow keys):
+    A — Terminal-native: every gate lives in the terminal.
+    B — Local web cockpit: every gate lives in the local web; the terminal launches it.
+    C — Hybrid by gate: decide in the terminal, review and attest in the local web.
+
+  The prototype renders the Postgres decision path. Choosing another option records
+  the choice in state; the diff stays on the recommended path and says so.
+  No persistence, no backend, no real grading. Single file on purpose.
+-->
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap');
+
+/* ------------------------------------------------------------------ */
+/* Prototype chrome — deliberately outside every product surface      */
+/* ------------------------------------------------------------------ */
+:root {
+  --proto-yellow: #f0cf4a;
+  --proto-ink: #171a18;
+  --proto-paper: #f7f5ee;
+  --proto-muted: #a8a398;
+  --proto-line: #3b403b;
+  --focus: #2f6feb;
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+html, body { margin: 0; min-height: 100%; }
+body {
+  font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+  background: #e7e3d7;
+  color: var(--proto-ink);
+  padding-bottom: 88px;
+  -webkit-font-smoothing: antialiased;
+}
+body[data-variant="A"] { background: #050907; }
+body[data-variant="B"] { background: #e7e2d5; }
+body[data-variant="C"] { background: #0c1013; }
+button, input, textarea, select { font: inherit; }
+button { cursor: pointer; }
+button:disabled { cursor: not-allowed; opacity: .45; }
+button:focus-visible, input:focus-visible, textarea:focus-visible, [tabindex]:focus-visible, a:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition: none !important; animation: none !important; scroll-behavior: auto !important; }
+}
+.visually-hidden {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+
+.proto-strip {
+  position: sticky; top: 0; z-index: 50;
+  display: flex; align-items: center; gap: 10px 14px; flex-wrap: wrap;
+  min-height: 50px;
+  padding: 8px 16px;
+  background: var(--proto-ink); color: var(--proto-paper);
+  border-bottom: 1px solid var(--proto-line);
+  font: 12px/1.35 "IBM Plex Mono", Consolas, monospace;
+}
+.proto-badge {
+  background: var(--proto-yellow); color: var(--proto-ink);
+  padding: 3px 7px; font-weight: 700; letter-spacing: .07em; white-space: nowrap;
+}
+.proto-question { color: #d7d2c5; flex: 1 1 340px; min-width: 220px; }
+.proto-tools { display: flex; gap: 5px; flex-wrap: wrap; align-items: center; }
+.proto-tools button {
+  border: 1px solid #5a5f58; background: transparent; color: #e8e4d9;
+  padding: 5px 9px; border-radius: 2px; font: inherit; line-height: 1;
+}
+.proto-tools button:hover { border-color: var(--proto-yellow); color: var(--proto-yellow); }
+.proto-tools button[aria-pressed="true"] { background: var(--proto-yellow); color: var(--proto-ink); border-color: var(--proto-yellow); }
+.proto-tools .tool-sep { width: 1px; height: 20px; background: #4a4f49; margin: 0 2px; }
+
+.proto-dock {
+  position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%);
+  z-index: 60; display: flex; align-items: center; gap: 8px;
+  background: var(--proto-ink); color: var(--proto-paper);
+  border: 1px solid #565b55; border-radius: 999px;
+  padding: 5px 7px; box-shadow: 0 8px 28px rgba(0,0,0,.32);
+}
+.proto-dock button {
+  width: 34px; height: 34px; border-radius: 50%; border: 1px solid #5a5f58;
+  background: transparent; color: inherit; font-size: 16px; line-height: 1;
+}
+.proto-dock button:hover { border-color: var(--proto-yellow); color: var(--proto-yellow); }
+.dock-label { min-width: 250px; text-align: center; font: 11px/1.25 "IBM Plex Mono", Consolas, monospace; }
+.dock-label b { display: block; font-size: 12px; letter-spacing: .01em; }
+.dock-label b span { display: inline; color: inherit; margin-top: 0; }
+.dock-label > span { display: block; color: #b7b2a4; margin-top: 1px; }
+.dock-hint { color: #8f8a7e; font-size: 10px; padding: 0 6px 0 2px; white-space: nowrap; }
+
+.drawer {
+  position: fixed; top: 50px; right: 14px; bottom: 82px;
+  width: min(400px, calc(100vw - 28px)); z-index: 55;
+  overflow: auto; overscroll-behavior: contain;
+  background: var(--proto-paper); color: var(--proto-ink);
+  border: 1px solid var(--proto-ink);
+  box-shadow: 8px 8px 0 rgba(0,0,0,.18);
+  padding: 18px 18px 24px;
+  font-size: 13px; line-height: 1.5;
+}
+.drawer[hidden] { display: none; }
+.drawer h2 { margin: 0 0 4px; font: 600 18px/1.2 "Newsreader", Georgia, serif; }
+.drawer .drawer-kicker { font: 10px/1.3 "IBM Plex Mono", monospace; letter-spacing: .12em; text-transform: uppercase; color: #8a5a12; margin-bottom: 8px; }
+.drawer h3 { margin: 18px 0 4px; font: 600 13px/1.3 "IBM Plex Mono", monospace; letter-spacing: .02em; }
+.drawer p { margin: 4px 0 8px; }
+.drawer ul { margin: 4px 0 10px; padding-left: 18px; }
+.drawer li { margin: 3px 0; }
+.drawer code { font: 12px/1.4 "IBM Plex Mono", monospace; background: #eae6da; padding: 1px 4px; border-radius: 2px; }
+.drawer .drawer-close { position: absolute; top: 10px; right: 10px; border: 1px solid #bdb7a7; background: transparent; padding: 2px 7px; }
+.drawer .state-table { width: 100%; border-collapse: collapse; font: 11.5px/1.45 "IBM Plex Mono", monospace; }
+.drawer .state-table th { text-align: left; width: 92px; vertical-align: top; color: #6b716a; font-weight: 500; padding: 3px 6px 3px 0; border-top: 1px solid #ddd7c8; }
+.drawer .state-table td { padding: 3px 0; border-top: 1px solid #ddd7c8; word-break: break-word; }
+.drawer .state-note { margin-top: 12px; padding: 8px 10px; border: 1px dashed #b9b3a3; color: #666b64; font-size: 11.5px; }
+.drawer .swatch { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 5px; vertical-align: 1px; }
+.drawer .ledger-mini { font: 11px/1.5 "IBM Plex Mono", monospace; background: #efebdf; padding: 8px; border-left: 3px solid #b23a2a; margin: 6px 0; white-space: pre-wrap; }
+
+/* ------------------------------------------------------------------ */
+/* Shared bits                                                         */
+/* ------------------------------------------------------------------ */
+#stage { min-height: calc(100vh - 50px - 88px); }
+.mono { font-family: "IBM Plex Mono", Consolas, monospace; }
+.serif { font-family: "Newsreader", Georgia, serif; }
+.small { font-size: 12px; }
+.muted { color: #6b716a; }
+
+/* ------------------------------------------------------------------ */
+/* A — Terminal-native                                                 */
+/* ------------------------------------------------------------------ */
+.vA { padding: 18px; display: flex; justify-content: center; }
+.term {
+  width: min(1220px, 100%);
+  height: calc(100vh - 50px - 88px - 36px);
+  min-height: 620px;
+  display: flex; flex-direction: column;
+  background: #07110c;
+  border: 1px solid #274234;
+  border-radius: 5px;
+  box-shadow: 0 18px 52px rgba(0,0,0,.42);
+  color: #cfe7d6;
+  font-family: "Cascadia Code", "JetBrains Mono", Consolas, monospace;
+  font-size: 13px; line-height: 1.55;
+  overflow: hidden;
+}
+.term-bar {
+  display: flex; align-items: center; gap: 10px; height: 36px; padding: 0 14px;
+  background: #0a1610; border-bottom: 1px solid #274234; color: #7fa38b;
+  font-size: 11.5px; flex: none;
+}
+.term-bar .dots { display: flex; gap: 5px; }
+.term-bar .dot { width: 8px; height: 8px; border-radius: 50%; background: #2b4636; }
+.term-bar .dot:nth-child(2) { background: #3d5a3e; }
+.term-bar .dot:nth-child(3) { background: #6e5a2f; }
+.term-bar .title { color: #9db7a5; }
+.term-bar .size { margin-left: auto; color: #527361; }
+.term-screen { flex: 1; overflow: auto; padding: 18px 22px 26px; }
+.term-foot {
+  flex: none; display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+  border-top: 1px solid #274234; padding: 8px 14px; color: #6f8f76; font-size: 11.5px;
+}
+.term-foot .key { color: #cfe7d6; }
+.t-dim { color: #6f8f76; }
+.t-green { color: #85d39b; }
+.t-amber { color: #ffbd5c; }
+.t-red { color: #ff7b72; }
+.t-blue { color: #7cc7ff; }
+.t-risk { color: #ffbd5c; border: 1px solid #6e5a2f; padding: 0 5px; border-radius: 2px; font-size: 11px; }
+.t-rule { color: #274234; margin: 6px 0 10px; overflow: hidden; white-space: nowrap; }
+.t-prompt { color: #85d39b; margin: 0 0 10px; }
+.t-prompt::before { content: "forge › "; color: #6f8f76; }
+.t-status { margin-bottom: 14px; }
+.t-status-row { margin: 1px 0; }
+.t-card { border: 1px solid #3c5a47; border-radius: 3px; padding: 14px 16px 16px; margin: 12px 0; background: #08140d; }
+.t-card-ok { border-color: #3f6b4f; }
+.t-card-lock { border-color: #5b4a2b; }
+.t-card-head { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; align-items: baseline; margin-bottom: 6px; font-size: 11.5px; letter-spacing: .04em; }
+.t-title { margin: 2px 0 8px; font-size: 17px; line-height: 1.3; color: #e2f4e7; font-weight: 600; }
+.t-p { margin: 6px 0; max-width: 88ch; }
+.t-meta { display: flex; gap: 6px; flex-wrap: wrap; margin: 8px 0 10px; }
+.t-chip { border: 1px solid #34503e; color: #9fc3aa; padding: 1px 6px; border-radius: 2px; font-size: 11px; }
+.t-chip-warn { border-color: #6e5a2f; color: #ffbd5c; }
+.t-options { margin: 12px 0 10px; display: grid; gap: 6px; }
+.t-opt {
+  display: grid; grid-template-columns: 42px minmax(0, 1fr); gap: 8px; text-align: left;
+  background: transparent; color: inherit; border: 1px solid #2d4737; border-radius: 2px;
+  padding: 9px 10px; font: inherit; line-height: 1.45;
+}
+.t-opt:hover { background: #0c1d13; border-color: #4d7059; }
+.t-opt[aria-pressed="true"] { background: #10251a; border-color: #ffbd5c; }
+.t-key { color: #ffbd5c; }
+.t-opt-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.t-opt-title { color: #e2f4e7; font-weight: 600; }
+.t-opt-title em { font-style: normal; color: #ffbd5c; font-size: 11px; margin-left: 4px; }
+.t-opt-sub { color: #9fc3aa; font-size: 12px; }
+.t-opt-chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 3px; }
+.t-opt-chip { color: #6f8f76; font-size: 11px; }
+.t-opt-chip::before { content: "· "; }
+.t-facts { margin: 12px 0 4px; padding-top: 10px; border-top: 1px dashed #2d4737; display: grid; gap: 4px; }
+.t-facts > div { display: grid; grid-template-columns: 132px minmax(0, 1fr); gap: 10px; }
+.t-facts > div > span:first-child { color: #6f8f76; }
+.t-facts .t-warn { color: #ffbd5c; }
+.t-rationale { margin-top: 14px; padding-top: 12px; border-top: 1px dashed #2d4737; }
+.t-rationale-head { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; font-size: 11.5px; margin-bottom: 6px; }
+.t-rationale textarea, .t-answer {
+  width: 100%; min-height: 82px; resize: vertical;
+  background: #06100a; color: #d8f0df; border: 1px solid #3c5a47; border-radius: 2px;
+  padding: 9px 10px; font: inherit; line-height: 1.5;
+}
+.t-rationale textarea:focus, .t-answer:focus { border-color: #ffbd5c; outline: none; }
+.t-rationale textarea::placeholder, .t-answer::placeholder { color: #5e7a66; opacity: 1; }
+.b-rationale textarea::placeholder, .b-q textarea::placeholder, .c-q textarea::placeholder { color: #8a918a; opacity: 1; }
+.modal-panel.A textarea::placeholder { color: #5e7a66; opacity: 1; }
+.modal-panel.B textarea::placeholder, .modal-panel.C textarea::placeholder { color: #8a918a; opacity: 1; }
+.t-rationale-foot { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 6px; }
+.t-btn {
+  border: 1px solid #4d7059; background: transparent; color: #cfe7d6;
+  padding: 6px 10px; border-radius: 2px; font: inherit; line-height: 1.2;
+}
+.t-btn:hover { border-color: #ffbd5c; color: #ffbd5c; }
+.t-btn-primary { background: #ffbd5c; border-color: #ffbd5c; color: #1a1306; font-weight: 600; }
+.t-btn-primary:hover { background: #ffd08a; color: #1a1306; }
+.t-btn-danger { border-color: #7a3b35; color: #ff9b93; }
+.t-error { margin-top: 10px; color: #ff9b93; border-left: 2px solid #7a3b35; padding-left: 8px; }
+.t-record { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 10px; margin: 5px 0; }
+.t-record > span:first-child { color: #6f8f76; }
+.t-record blockquote { margin: 0; color: #d8f0df; }
+.t-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 12px; }
+.t-sim { display: flex; gap: 5px; flex-wrap: wrap; align-items: center; margin: 8px 0; padding: 6px 8px; border: 1px dashed #6e5a2f; color: #9c8b63; font-size: 11px; }
+.t-sim button { border: 1px solid #6e5a2f; background: transparent; color: #ffbd5c; padding: 2px 6px; font: inherit; border-radius: 2px; }
+.t-sim button:hover { background: #221b0b; }
+.t-feedback { margin-top: 10px; padding: 9px 11px; border-left: 3px solid #ffbd5c; background: #1a1508; color: #f0d6a2; }
+.t-feedback.ok { border-color: #4f9c67; background: #0b1d11; color: #b6e3c2; }
+.t-feedback.bad { border-color: #a34a43; background: #1d0e0c; color: #ffb4ad; }
+.t-feedback p { margin: 0 0 6px; }
+.t-pre { margin: 8px 0 0; padding: 8px 10px; background: #040a06; border: 1px solid #2d4737; color: #a9c8b3; font: 11.5px/1.5 "Cascadia Code", Consolas, monospace; overflow: auto; white-space: pre-wrap; }
+.t-tabs { display: flex; gap: 4px; flex-wrap: wrap; margin: 8px 0 12px; }
+.t-tab { border: 1px solid #34503e; background: transparent; color: #9fc3aa; padding: 4px 8px; border-radius: 2px; font: inherit; font-size: 12px; }
+.t-tab[aria-pressed="true"] { background: #ffbd5c; color: #1a1306; border-color: #ffbd5c; font-weight: 600; }
+.t-files { display: flex; flex-wrap: wrap; gap: 4px 10px; margin: 4px 0 8px; color: #9fc3aa; font-size: 12px; }
+.t-file::before { content: "▸ "; color: #527361; }
+.t-diff { border: 1px solid #2d4737; border-radius: 2px; overflow: hidden; background: #06100a; }
+.t-diff-file { padding: 6px 10px; background: #0c1d13; color: #9fc3aa; font-size: 12px; border-top: 1px solid #274234; }
+.t-diff-file:first-child { border-top: 0; }
+.t-diff-meta { padding: 2px 10px; color: #527361; font-size: 11px; }
+.t-diff-hunk { padding: 3px 10px; color: #7cc7ff; background: #081812; font-size: 11.5px; }
+.t-diff-line { display: grid; grid-template-columns: 44px minmax(0, 1fr) auto; gap: 8px; padding: 0 10px; min-height: 19px; align-items: baseline; }
+.t-diff-line.add { background: #0b2013; }
+.t-diff-line.del { background: #23100d; }
+.t-ln { color: #527361; text-align: right; font-size: 11px; user-select: none; }
+.t-code { white-space: pre-wrap; word-break: break-word; color: #cfe7d6; }
+.t-diff-line.add .t-code { color: #a9e0b8; }
+.t-diff-line.del .t-code { color: #f0a8a1; }
+.t-anns { display: flex; gap: 3px; padding-left: 4px; }
+.t-ann { border: 1px solid #6e5a2f; background: #1a1508; color: #ffbd5c; font: 10px/1.4 inherit; padding: 0 4px; border-radius: 2px; }
+.t-ann:hover { background: #2a210c; }
+.t-ann-panel { margin: 8px 10px 10px; padding: 9px 11px; border: 1px solid #6e5a2f; background: #171307; }
+.t-ann-head { display: flex; justify-content: space-between; gap: 10px; color: #ffbd5c; margin-bottom: 4px; }
+.t-ann-head button { border: 0; background: transparent; color: inherit; font: inherit; }
+.t-ann-panel p { margin: 0; color: #e8d5aa; }
+.t-map-list { display: grid; gap: 8px; margin-top: 8px; }
+.t-map-item { border-left: 2px solid #34503e; padding: 4px 0 4px 10px; }
+.t-map-item.resolved { border-color: #4f9c67; }
+.t-map-item.pending { border-color: #ffbd5c; }
+.t-map-item.deferred { border-color: #7cc7ff; }
+.t-map-item.rejected { border-color: #a34a43; }
+.t-map-head { display: flex; gap: 8px; flex-wrap: wrap; align-items: baseline; }
+.t-map-id { color: #ffbd5c; }
+.t-map-status { color: #6f8f76; font-size: 11px; }
+.t-map-gist { color: #9fc3aa; font-size: 12px; }
+.t-map-quote { color: #d8f0df; border-left: 2px solid #274234; padding-left: 8px; margin: 5px 0 0; font-size: 12px; }
+.t-check-list { display: grid; gap: 5px; margin-top: 8px; }
+.t-check { display: grid; grid-template-columns: 200px minmax(0, 1fr) 62px; gap: 10px; padding: 5px 0; border-top: 1px solid #1d3527; text-align: left; background: transparent; border-left: 0; border-right: 0; border-bottom: 0; color: inherit; font: inherit; }
+.t-check:hover { background: #0b1a11; }
+.t-check-name { color: #cfe7d6; }
+.t-check-result { color: #85d39b; }
+.t-check-time { color: #527361; text-align: right; font-size: 11px; }
+.t-check-log { grid-column: 1 / -1; }
+.t-checkbox { display: block; width: 100%; text-align: left; border: 1px solid #3c5a47; background: transparent; color: #cfe7d6; padding: 9px 11px; font: inherit; margin: 10px 0; }
+.t-checkbox[aria-pressed="true"] { border-color: #4f9c67; background: #0b1d11; color: #b6e3c2; }
+.t-progress { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin: 8px 0 12px; color: #6f8f76; font-size: 12px; }
+.t-progress b { color: #ffbd5c; font-weight: 500; }
+.t-progress .done { color: #85d39b; }
+.t-stopped { border-color: #7a3b35; }
+.t-stopped .t-title { color: #ffb4ad; }
+.cursor { display: inline-block; width: 8px; height: 15px; background: #85d39b; vertical-align: -2px; animation: blink 1.1s steps(1) infinite; }
+@keyframes blink { 50% { opacity: 0; } }
+
+/* ------------------------------------------------------------------ */
+/* B — Local web cockpit                                                */
+/* ------------------------------------------------------------------ */
+.vB {
+  --b-paper: #f2efe6;
+  --b-paper-2: #faf8f1;
+  --b-ink: #1c2320;
+  --b-muted: #5d665f;
+  --b-line: #d5cfc0;
+  --b-line-strong: #b9b2a2;
+  --b-accent: #b23a2a;
+  --b-accent-ink: #fff8f2;
+  --b-green: #2f6b4f;
+  --b-amber: #8a5a12;
+  --b-blue: #2f5d7c;
+  background: var(--b-paper);
+  color: var(--b-ink);
+  min-height: calc(100vh - 50px - 88px);
+  font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+}
+.b-top {
+  display: flex; align-items: center; gap: 18px; flex-wrap: wrap;
+  height: 66px; padding: 0 28px; border-bottom: 1px solid var(--b-line);
+  background: rgba(242,239,230,.92); position: sticky; top: 50px; z-index: 20;
+  backdrop-filter: blur(6px);
+}
+.b-brand { font: 500 25px/1 "Newsreader", Georgia, serif; letter-spacing: -.02em; display: flex; align-items: center; gap: 8px; }
+.b-brand span { font: 10px/1 "IBM Plex Mono", Consolas, monospace; letter-spacing: .11em; text-transform: uppercase; color: var(--b-accent); border: 1px solid currentColor; padding: 3px 5px; }
+.b-repo { font: 12px/1.3 "IBM Plex Mono", Consolas, monospace; color: var(--b-muted); }
+.b-repo i { font-style: normal; color: var(--b-line-strong); margin: 0 4px; }
+.b-top-state { margin-left: auto; display: flex; align-items: center; gap: 8px; font: 12px/1.3 "IBM Plex Mono", Consolas, monospace; color: var(--b-muted); }
+.b-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--b-amber); box-shadow: 0 0 0 3px rgba(138,90,18,.13); }
+.b-dot.done { background: var(--b-green); box-shadow: 0 0 0 3px rgba(47,107,79,.13); }
+.b-shell { display: grid; grid-template-columns: 252px minmax(0, 1fr); align-items: start; }
+.b-rail {
+  border-right: 1px solid var(--b-line); padding: 24px 20px 30px 28px;
+  min-height: calc(100vh - 50px - 66px - 88px);
+}
+.b-rail-section { padding: 0 0 18px; margin-bottom: 18px; border-bottom: 1px solid var(--b-line); }
+.b-rail-section:last-of-type { border-bottom: 0; }
+.b-eyebrow { font: 600 10px/1.3 "IBM Plex Mono", Consolas, monospace; letter-spacing: .14em; text-transform: uppercase; color: var(--b-accent); margin-bottom: 6px; }
+.b-task-id { font: 500 30px/1 "Newsreader", Georgia, serif; letter-spacing: -.02em; }
+.b-task-name { font-size: 13px; line-height: 1.35; margin: 3px 0 10px; color: var(--b-ink); }
+.b-meta { margin: 0; font: 11.5px/1.5 "IBM Plex Mono", Consolas, monospace; }
+.b-meta div { display: grid; grid-template-columns: 58px minmax(0, 1fr); gap: 6px; }
+.b-meta dt { color: var(--b-muted); }
+.b-meta dd { margin: 0; overflow-wrap: anywhere; }
+.b-gates { list-style: none; margin: 0; padding: 0; display: grid; gap: 3px; }
+.b-gates li { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; line-height: 1.5; padding: 3px 0; color: var(--b-muted); }
+.b-gates li b { font-weight: 500; color: var(--b-ink); }
+.b-gates li.done { color: var(--b-green); }
+.b-gates li.done b { color: var(--b-green); }
+.b-gates li.done b::before { content: "✓ "; }
+.b-gates li.active { color: var(--b-amber); }
+.b-gates li.active b { color: var(--b-amber); }
+.b-gates li.active b::before { content: "● "; }
+.b-gates li.locked { color: var(--b-line-strong); }
+.b-gates li.locked b { color: var(--b-line-strong); }
+.b-gates li.locked b::before { content: "○ "; }
+.b-map { display: grid; gap: 5px; }
+.b-map-item { display: grid; grid-template-columns: 30px minmax(0, 1fr); gap: 6px; font-size: 12px; line-height: 1.4; }
+.b-map-item .id { font: 11px/1.4 "IBM Plex Mono", Consolas, monospace; color: var(--b-accent); }
+.b-map-item .what { color: var(--b-ink); }
+.b-map-item .st { display: block; font: 10.5px/1.3 "IBM Plex Mono", Consolas, monospace; color: var(--b-muted); }
+.b-map-item.pending .what { color: var(--b-amber); }
+.b-checks-mini { display: grid; gap: 4px; font: 11px/1.45 "IBM Plex Mono", Consolas, monospace; color: var(--b-muted); }
+.b-checks-mini span { color: var(--b-green); }
+.b-log { margin-top: 22px; background: #17201c; color: #c9d7ce; padding: 10px 12px; font: 10.5px/1.55 "IBM Plex Mono", Consolas, monospace; border-radius: 2px; }
+.b-log-head { color: #7d9b87; text-transform: uppercase; letter-spacing: .12em; font-size: 9px; margin-bottom: 4px; }
+.b-log-line { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.b-log-dim { color: #7d9b87; }
+.b-main { padding: 30px 36px 40px 40px; min-width: 0; }
+.b-title { margin: 2px 0 10px; font: 500 42px/1.02 "Newsreader", Georgia, serif; letter-spacing: -.025em; max-width: 18ch; }
+.b-lede { margin: 0 0 14px; max-width: 70ch; font-size: 15px; line-height: 1.55; color: #3f4942; }
+.b-meta-row { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0 22px; }
+.b-tag { border: 1px solid var(--b-line-strong); padding: 3px 7px; font: 10.5px/1.2 "IBM Plex Mono", Consolas, monospace; color: var(--b-muted); }
+.b-tag.warn { border-color: #c9a15e; color: var(--b-amber); background: #f6ecd8; }
+.b-section { margin: 24px 0; }
+.b-h2 { margin: 0 0 7px; font: 600 12px/1.3 "IBM Plex Mono", Consolas, monospace; letter-spacing: .1em; text-transform: uppercase; color: var(--b-muted); }
+.b-section p { margin: 0; max-width: 72ch; font-size: 14px; line-height: 1.6; }
+.b-decision-grid { display: grid; grid-template-columns: minmax(0, 1fr) 348px; gap: 40px; align-items: start; }
+.b-decision-main { min-width: 0; }
+.b-options { display: grid; gap: 0; border-top: 1px solid var(--b-line); }
+.b-option {
+  display: grid; grid-template-columns: 20px minmax(0, 1fr) 30px; gap: 12px;
+  width: 100%; text-align: left; background: transparent; border: 0; border-bottom: 1px solid var(--b-line);
+  padding: 15px 8px 15px 2px; color: inherit; font: inherit; transition: background .15s ease;
+}
+.b-option:hover { background: #ede9dd; }
+.b-option[aria-pressed="true"] { background: #f8f0df; }
+.b-radio { width: 15px; height: 15px; border: 1px solid #8f8878; border-radius: 50%; margin-top: 3px; position: relative; }
+.b-option[aria-pressed="true"] .b-radio { border-color: var(--b-accent); }
+.b-option[aria-pressed="true"] .b-radio::after { content: ""; position: absolute; inset: 3px; border-radius: 50%; background: var(--b-accent); }
+.b-option-body { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.b-option-title { font-size: 16px; font-weight: 600; line-height: 1.3; }
+.b-option-title em { font: 10px/1.2 "IBM Plex Mono", monospace; font-style: normal; letter-spacing: .08em; text-transform: uppercase; color: var(--b-accent); border: 1px solid currentColor; padding: 2px 5px; margin-left: 5px; vertical-align: 2px; }
+.b-option-sub { font: 11.5px/1.3 "IBM Plex Mono", Consolas, monospace; color: var(--b-muted); }
+.b-option-sum { font-size: 13.5px; line-height: 1.5; color: #3f4942; }
+.b-chips { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 3px; }
+.b-chip { font: 10.5px/1.3 "IBM Plex Mono", monospace; color: var(--b-muted); border: 1px solid var(--b-line); padding: 2px 5px; }
+.b-chip.good { color: var(--b-green); border-color: #a9c9b7; }
+.b-chip.warn { color: var(--b-amber); border-color: #d6bb8c; }
+.b-option-consequence { margin-top: 6px; padding-left: 10px; border-left: 2px solid var(--b-accent); font-size: 12.5px; line-height: 1.5; color: #4b554d; }
+.b-option-num { font: 11px/1.4 "IBM Plex Mono", monospace; color: var(--b-line-strong); text-align: right; }
+.b-rec { margin: 20px 0; padding: 12px 0 12px 16px; border-left: 3px solid var(--b-accent); background: #f7f0e2; }
+.b-rec .b-eyebrow { margin-bottom: 3px; }
+.b-rec p { margin: 0; max-width: 68ch; font-size: 14px; line-height: 1.55; }
+.b-facts { display: grid; gap: 5px; margin: 18px 0; font-size: 13px; line-height: 1.5; }
+.b-facts > div { display: grid; grid-template-columns: 128px minmax(0, 1fr); gap: 10px; padding-top: 5px; border-top: 1px solid var(--b-line); }
+.b-facts dt { color: var(--b-muted); font: 600 10.5px/1.6 "IBM Plex Mono", monospace; letter-spacing: .06em; text-transform: uppercase; }
+.b-facts dd { margin: 0; }
+.b-facts .warn { color: var(--b-amber); }
+.b-rationale { margin: 24px 0 8px; }
+.b-rationale label { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; font: 600 12px/1.3 "IBM Plex Mono", Consolas, monospace; letter-spacing: .04em; }
+.b-rationale label span { color: var(--b-muted); font-weight: 400; letter-spacing: 0; }
+.b-rationale textarea, .b-q textarea {
+  width: 100%; min-height: 104px; margin-top: 7px; resize: vertical;
+  background: var(--b-paper-2); color: var(--b-ink);
+  border: 1px solid var(--b-line-strong); padding: 11px 12px;
+  font: 14px/1.55 "IBM Plex Sans", "Segoe UI", sans-serif;
+}
+.b-rationale textarea:focus, .b-q textarea:focus { border-color: var(--b-accent); outline: none; box-shadow: 0 0 0 1px var(--b-accent); }
+.b-help { margin: 6px 0 0; font-size: 12px; color: var(--b-muted); }
+.b-actionbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 18px; padding: 12px 0; background: var(--b-paper); border-top: 1px solid var(--b-line); }
+.b-btn {
+  border: 1px solid var(--b-ink); background: transparent; color: var(--b-ink);
+  padding: 9px 14px; border-radius: 1px; font: 500 13px/1.2 "IBM Plex Sans", "Segoe UI", sans-serif;
+  transition: background .15s ease, color .15s ease, border-color .15s ease;
+}
+.b-btn:hover { border-color: var(--b-accent); color: var(--b-accent); }
+.b-btn.primary { background: var(--b-ink); border-color: var(--b-ink); color: var(--b-paper-2); }
+.b-btn.primary:hover { background: var(--b-accent); border-color: var(--b-accent); color: var(--b-accent-ink); }
+.b-btn.ghost { border-color: transparent; color: var(--b-muted); padding-left: 8px; padding-right: 8px; }
+.b-btn.ghost:hover { color: var(--b-accent); }
+.b-btn.small { padding: 6px 9px; font-size: 12px; }
+.b-default { flex-basis: 100%; display: flex; gap: 8px; align-items: baseline; margin: 2px 0 0; font: 11px/1.4 "IBM Plex Mono", monospace; color: var(--b-amber); }
+.b-default::before { content: "!"; display: inline-grid; place-items: center; width: 15px; height: 15px; border: 1px solid currentColor; border-radius: 50%; font-size: 10px; }
+.b-ledger { position: sticky; top: 136px; border: 1px solid var(--b-line-strong); background: var(--b-paper-2); padding: 15px 16px 13px; box-shadow: 5px 5px 0 rgba(28,35,32,.06); font: 11.5px/1.55 "IBM Plex Mono", Consolas, monospace; }
+.b-ledger-head { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; padding-bottom: 8px; border-bottom: 1px solid var(--b-line); }
+.b-ledger-head b { font: 600 10px/1.3 "IBM Plex Mono", monospace; letter-spacing: .12em; text-transform: uppercase; color: var(--b-accent); }
+.b-ledger-head span { font-size: 9.5px; letter-spacing: .1em; text-transform: uppercase; color: var(--b-green); border: 1px solid currentColor; padding: 1px 4px; }
+.b-ledger-file { margin: 9px 0; color: var(--b-muted); overflow-wrap: anywhere; font-size: 10.5px; }
+.b-ledger dl { margin: 0; }
+.b-ledger dl div { display: grid; grid-template-columns: 86px minmax(0, 1fr); gap: 6px; padding: 2px 0; }
+.b-ledger dt { color: var(--b-muted); }
+.b-ledger dd { margin: 0; overflow-wrap: anywhere; }
+.b-ledger-quote { margin: 10px 0 8px; padding: 8px 0 8px 10px; border-left: 2px solid var(--b-accent); }
+.b-ledger-quote span { display: block; font: 9px/1.3 "IBM Plex Mono", monospace; letter-spacing: .1em; text-transform: uppercase; color: var(--b-muted); margin-bottom: 3px; }
+.b-ledger-quote p { margin: 0; font: 12px/1.55 "Newsreader", Georgia, serif; color: var(--b-ink); }
+.b-ledger-foot { padding-top: 7px; border-top: 1px solid var(--b-line); color: var(--b-muted); font-size: 10px; }
+.b-error { margin: 10px 0; padding: 8px 10px; border-left: 3px solid var(--b-accent); background: #f6e2dd; color: #7e2c20; font-size: 13px; }
+.b-receipt { max-width: 900px; }
+.b-receipt-grid { display: grid; gap: 0; margin: 22px 0; border-top: 1px solid var(--b-line); }
+.b-receipt-grid > div { display: grid; grid-template-columns: 130px minmax(0, 1fr); gap: 14px; padding: 10px 0; border-bottom: 1px solid var(--b-line); }
+.b-receipt-grid dt { font: 600 10.5px/1.5 "IBM Plex Mono", monospace; letter-spacing: .07em; text-transform: uppercase; color: var(--b-muted); }
+.b-receipt-grid dd { margin: 0; font-size: 14px; line-height: 1.55; }
+.b-receipt-grid blockquote { margin: 0; font: 15px/1.5 "Newsreader", Georgia, serif; }
+.b-receipt-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 18px; }
+.b-parked { max-width: 760px; }
+.b-parked .b-title { max-width: 16ch; }
+.b-parked-note { margin: 18px 0; padding: 14px 16px; background: #f7f0e2; border-left: 3px solid var(--b-amber); font-size: 14px; line-height: 1.55; }
+.b-parked-note strong { display: block; font: 600 10.5px/1.3 "IBM Plex Mono", monospace; letter-spacing: .1em; text-transform: uppercase; color: var(--b-amber); margin-bottom: 4px; }
+
+.b-review-head { max-width: 900px; }
+.b-review-grid { display: grid; grid-template-columns: minmax(0, 1fr) 330px; gap: 32px; align-items: start; margin-top: 20px; }
+.b-diff-col { min-width: 0; }
+.b-diff { border: 1px solid var(--b-line-strong); background: var(--b-paper-2); }
+.b-diff-head { display: flex; justify-content: space-between; gap: 12px; padding: 8px 12px; border-bottom: 1px solid var(--b-line); font: 11px/1.4 "IBM Plex Mono", monospace; color: var(--b-muted); }
+.b-diff-file { display: flex; justify-content: space-between; gap: 12px; padding: 7px 12px; background: #eae5d8; border-top: 1px solid var(--b-line); border-bottom: 1px solid var(--b-line); font: 11.5px/1.4 "IBM Plex Mono", monospace; color: var(--b-ink); }
+.b-diff-file:first-of-type { border-top: 0; }
+.b-diff-file .stat { color: var(--b-muted); white-space: nowrap; }
+.b-diff-meta { padding: 3px 12px; font: 10.5px/1.5 "IBM Plex Mono", monospace; color: var(--b-muted); }
+.b-diff-hunk { padding: 4px 12px; background: #e6ece5; color: var(--b-blue); font: 10.5px/1.5 "IBM Plex Mono", monospace; }
+.b-diff-line { display: grid; grid-template-columns: 42px minmax(0, 1fr) 58px; gap: 6px; padding: 1px 10px; font: 11.5px/1.6 "IBM Plex Mono", Consolas, monospace; }
+.b-diff-line.add { background: #e4efe6; }
+.b-diff-line.del { background: #f6e4df; }
+.b-diff-line .ln { color: #9b9588; text-align: right; user-select: none; }
+.b-diff-line .code { white-space: pre-wrap; word-break: break-word; }
+.b-diff-line.add .code { color: #245338; }
+.b-diff-line.del .code { color: #7e2c20; }
+.b-anns { display: flex; gap: 3px; justify-content: flex-end; }
+.b-ann { border: 1px solid #c9a15e; background: #f6ecd8; color: var(--b-amber); font: 9.5px/1.5 "IBM Plex Mono", monospace; padding: 0 4px; border-radius: 1px; }
+.b-ann:hover { background: #efdfbc; }
+.b-ann-panel { margin: 10px 12px; padding: 10px 12px; border: 1px solid #c9a15e; background: #fbf5e8; }
+.b-ann-panel-head { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; margin-bottom: 4px; }
+.b-ann-panel-head b { font: 600 11px/1.3 "IBM Plex Mono", monospace; color: var(--b-amber); }
+.b-ann-panel-head button { border: 0; background: transparent; color: var(--b-muted); font: inherit; }
+.b-ann-panel p { margin: 0; font-size: 12.5px; line-height: 1.55; color: #4b554d; }
+.b-packet { position: sticky; top: 136px; border-top: 2px solid var(--b-ink); }
+.b-packet-tabs { display: flex; gap: 0; border-bottom: 1px solid var(--b-line); }
+.b-packet-tabs button { flex: 1; border: 0; background: transparent; padding: 9px 4px; font: 10.5px/1.2 "IBM Plex Mono", monospace; letter-spacing: .04em; color: var(--b-muted); border-bottom: 2px solid transparent; margin-bottom: -1px; }
+.b-packet-tabs button[aria-pressed="true"] { color: var(--b-ink); border-bottom-color: var(--b-accent); }
+.b-packet-body { padding: 14px 0; }
+.b-packet-item { padding: 9px 0; border-bottom: 1px solid var(--b-line); }
+.b-packet-item:last-child { border-bottom: 0; }
+.b-packet-item .id { font: 10.5px/1.4 "IBM Plex Mono", monospace; color: var(--b-accent); }
+.b-packet-item .what { font-size: 12.5px; line-height: 1.45; margin: 1px 0; }
+.b-packet-item .st { font: 10px/1.4 "IBM Plex Mono", monospace; color: var(--b-muted); }
+.b-packet-item.pending .what { color: var(--b-amber); }
+.b-packet-quote { margin: 7px 0 0; padding-left: 9px; border-left: 2px solid var(--b-line-strong); font: 12px/1.5 "Newsreader", Georgia, serif; color: #3f4942; }
+.b-packet-check { display: flex; justify-content: space-between; gap: 8px; padding: 5px 0; border-bottom: 1px solid var(--b-line); font: 11px/1.5 "IBM Plex Mono", monospace; }
+.b-packet-check span:last-child { color: var(--b-green); }
+.b-packet-check button { border: 0; background: transparent; color: var(--b-blue); font: 10px/1.4 "IBM Plex Mono", monospace; padding: 0; text-decoration: underline; }
+.b-packet-log { margin: 6px 0 0; padding: 7px 8px; background: #efebdf; font: 10px/1.5 "IBM Plex Mono", monospace; white-space: pre-wrap; overflow: auto; max-height: 150px; }
+.b-attest-cta { margin-top: 16px; padding: 14px; background: #1c2320; color: var(--b-paper); }
+.b-attest-cta .b-eyebrow { color: #d9a87a; }
+.b-attest-cta p { margin: 0 0 10px; font: 13px/1.5 "IBM Plex Sans", sans-serif; }
+.b-attest-cta .b-btn { border-color: #d9cfbd; color: var(--b-paper); }
+.b-attest-cta .b-btn:hover { background: var(--b-accent); border-color: var(--b-accent); }
+.b-attest-cta .b-btn.primary { background: var(--b-paper); color: var(--b-ink); border-color: var(--b-paper); }
+
+.b-viva { max-width: 880px; }
+.b-progress { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; margin: 18px 0 8px; }
+.b-progress div { height: 5px; background: var(--b-line); }
+.b-progress div.pass { background: var(--b-green); }
+.b-progress div.fail { background: var(--b-accent); }
+.b-q { border-top: 1px solid var(--b-line); padding: 20px 0 16px; }
+.b-q-head { display: grid; grid-template-columns: 38px minmax(0, 1fr); gap: 12px; }
+.b-q-num { font: 500 26px/1 "Newsreader", Georgia, serif; color: var(--b-accent); }
+.b-q h2 { margin: 0 0 3px; font: 500 20px/1.25 "Newsreader", Georgia, serif; letter-spacing: -.01em; }
+.b-q .evidence { font: 10.5px/1.4 "IBM Plex Mono", monospace; color: var(--b-muted); }
+.b-q textarea { min-height: 88px; margin-top: 10px; }
+.b-q-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 7px; }
+.b-q-sim { display: flex; gap: 4px; flex-wrap: wrap; align-items: center; font: 10px/1.3 "IBM Plex Mono", monospace; color: var(--b-muted); }
+.b-q-sim button { border: 1px dashed var(--b-line-strong); background: transparent; color: var(--b-muted); padding: 3px 6px; font: inherit; }
+.b-q-sim button:hover { border-color: var(--b-accent); color: var(--b-accent); }
+.b-feedback { margin-top: 10px; padding: 10px 12px; border-left: 3px solid var(--b-amber); background: #f7edda; font-size: 13px; line-height: 1.55; }
+.b-feedback.ok { border-color: var(--b-green); background: #e6f0e8; }
+.b-feedback.bad { border-color: var(--b-accent); background: #f6e2dd; }
+.b-feedback b { display: block; font: 600 10px/1.3 "IBM Plex Mono", monospace; letter-spacing: .1em; text-transform: uppercase; margin-bottom: 3px; }
+.b-feedback p { margin: 0 0 6px; }
+.b-escalate { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--b-line-strong); }
+.b-attest-final { margin-top: 24px; padding: 20px; background: #1c2320; color: var(--b-paper); }
+.b-attest-final .b-eyebrow { color: #d9a87a; }
+.b-attest-final h2 { margin: 0 0 12px; font: 500 22px/1.25 "Newsreader", Georgia, serif; max-width: 24ch; }
+.b-attest-final p { margin: 10px 0 0; font-size: 12px; line-height: 1.5; color: #c6c0b2; }
+.b-attest-final .b-btn { border-color: var(--b-paper); color: var(--b-paper); }
+.b-attest-final .b-btn:hover { background: var(--b-accent); border-color: var(--b-accent); }
+.b-attest-final .b-btn.primary { background: var(--b-paper); color: var(--b-ink); }
+.b-check { display: flex; gap: 9px; align-items: flex-start; width: 100%; text-align: left; border: 1px solid #6c746c; background: transparent; color: var(--b-paper); padding: 10px 12px; font: 13px/1.5 "IBM Plex Sans", sans-serif; }
+.b-check[aria-pressed="true"] { border-color: #d9a87a; background: #26302a; }
+.b-check .box { flex: none; width: 16px; height: 16px; border: 1px solid #b9b2a2; margin-top: 1px; display: grid; place-items: center; font-size: 12px; }
+.b-check[aria-pressed="true"] .box { background: #d9a87a; border-color: #d9a87a; color: #1c2320; }
+.b-attest-locked { margin-top: 18px; padding: 12px 14px; border: 1px dashed var(--b-line-strong); color: var(--b-muted); font-size: 13px; }
+.b-done { max-width: 820px; }
+.b-done .b-title { max-width: 14ch; }
+.b-done-mark { display: inline-grid; place-items: center; width: 44px; height: 44px; border: 1px solid var(--b-green); color: var(--b-green); border-radius: 50%; font-size: 22px; margin-bottom: 14px; }
+
+.b-wait { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(300px, .9fr); gap: 48px; align-items: start; padding: 42px 0 30px; }
+.b-wait-title { margin: 0 0 12px; font: 500 58px/1 "Newsreader", Georgia, serif; letter-spacing: -.03em; }
+.b-wait-table { margin: 22px 0; border-top: 1px solid var(--b-line); }
+.b-wait-table > div { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--b-line); font-size: 13px; line-height: 1.5; }
+.b-wait-table dt { font: 600 10px/1.7 "IBM Plex Mono", monospace; letter-spacing: .08em; text-transform: uppercase; color: var(--b-muted); }
+.b-wait-table dd { margin: 0; }
+.b-wait-term { background: #17201c; color: #c9d7ce; padding: 14px 16px; font: 11px/1.65 "IBM Plex Mono", Consolas, monospace; }
+.b-wait-term .head { color: #7d9b87; text-transform: uppercase; letter-spacing: .12em; font-size: 9px; padding-bottom: 8px; border-bottom: 1px solid #2e3a34; margin-bottom: 8px; }
+.b-wait-term pre { margin: 0; white-space: pre-wrap; font: inherit; }
+.b-wait-term .amber { color: #e0b36a; }
+.b-wait-term .green { color: #8fc9a3; }
+
+/* ------------------------------------------------------------------ */
+/* C — Hybrid by gate                                                  */
+/* ------------------------------------------------------------------ */
+.vC {
+  height: calc(100vh - 50px - 88px);
+  min-height: 560px;
+  --c-shell: #0d1215;
+  --c-console: #090e11;
+  --c-panel: #141c20;
+  --c-line: #2a353b;
+  --c-text: #e7e3d8;
+  --c-muted: #8c9a9b;
+  --c-copper: #e09056;
+  --c-copper-deep: #b45f32;
+  --c-green: #79c29a;
+  --c-red: #e07a72;
+  --c-paper: #f3f1e9;
+  --c-ink: #1a211e;
+  --c-paper-muted: #5e6862;
+  --c-paper-line: #d2ccbd;
+  display: grid; grid-template-columns: 400px minmax(0, 1fr);
+  background: var(--c-shell); color: var(--c-text);
+  font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+}
+.c-console { background: var(--c-console); border-right: 1px solid var(--c-line); display: flex; flex-direction: column; height: 100%; }
+.c-console-head { display: flex; align-items: center; gap: 8px; height: 42px; padding: 0 14px; border-bottom: 1px solid var(--c-line); font: 11px/1.3 "IBM Plex Mono", Consolas, monospace; color: var(--c-muted); }
+.c-word { color: var(--c-copper); font-weight: 600; letter-spacing: .04em; }
+.c-task { color: var(--c-text); }
+.c-live { margin-left: auto; color: var(--c-green); font-size: 10px; }
+.c-live::before { content: "● "; }
+.c-console-body { flex: 1; overflow: auto; padding: 14px 14px 20px; font-family: "Cascadia Code", "JetBrains Mono", Consolas, monospace; font-size: 11.5px; line-height: 1.55; }
+.c-log { display: grid; gap: 2px; margin-bottom: 14px; color: var(--c-muted); }
+.c-log .ts { color: #55666b; margin-right: 7px; }
+.c-log b { color: var(--c-copper); font-weight: 500; }
+.c-card { border: 1px solid var(--c-line); background: #0b1215; padding: 11px 12px; margin: 10px 0; }
+.c-card-head { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; font-size: 10px; letter-spacing: .05em; margin-bottom: 5px; }
+.c-amber { color: var(--c-copper); }
+.c-dim { color: var(--c-muted); }
+.c-card .c-q { color: var(--c-text); font-weight: 600; font-size: 13px; line-height: 1.4; margin-bottom: 4px; }
+.c-why { color: var(--c-muted); margin-bottom: 8px; }
+.c-opts { display: grid; gap: 4px; margin: 8px 0; }
+.c-opt { display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 5px; text-align: left; background: transparent; border: 1px solid var(--c-line); color: var(--c-text); padding: 5px 7px; font: inherit; line-height: 1.4; }
+.c-opt:hover { border-color: #51666d; background: #0f191d; }
+.c-opt[aria-pressed="true"] { border-color: var(--c-copper); background: #171309; }
+.c-opt .k { color: var(--c-copper); }
+.c-opt .o { display: flex; flex-direction: column; }
+.c-opt .o small { color: var(--c-muted); font-size: 10.5px; }
+.c-facts { display: grid; gap: 2px; margin: 8px 0 0; color: var(--c-muted); font-size: 10.5px; }
+.c-facts div { display: grid; grid-template-columns: 92px minmax(0, 1fr); gap: 6px; }
+.c-facts .warn { color: var(--c-copper); }
+.c-textarea { width: 100%; min-height: 64px; resize: vertical; margin-top: 7px; background: #060b0d; border: 1px solid var(--c-line); color: var(--c-text); padding: 7px 8px; font: inherit; line-height: 1.5; }
+.c-textarea:focus { border-color: var(--c-copper); outline: none; }
+.c-btn { border: 1px solid #4d626a; background: transparent; color: var(--c-text); padding: 5px 8px; font: inherit; border-radius: 1px; }
+.c-btn:hover { border-color: var(--c-copper); color: var(--c-copper); }
+.c-btn-primary { background: var(--c-copper); border-color: var(--c-copper); color: #1a1007; font-weight: 600; }
+.c-btn-primary:hover { background: #f0a56e; color: #1a1007; }
+.c-actions { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-top: 8px; }
+.c-receipt { border-left: 2px solid var(--c-green); padding: 5px 0 5px 9px; margin: 9px 0; color: var(--c-muted); }
+.c-receipt b { color: var(--c-green); font-weight: 500; }
+.c-prompt { margin-top: 14px; color: var(--c-green); font-size: 11.5px; }
+.c-prompt::before { content: "forge › "; color: var(--c-muted); }
+.c-console-foot { flex: none; border-top: 1px solid var(--c-line); padding: 7px 12px; color: #63757a; font: 10px/1.4 "IBM Plex Mono", monospace; display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.c-stage { background: var(--c-paper); color: var(--c-ink); overflow: auto; min-width: 0; height: 100%; }
+.c-stage-head { position: sticky; top: 0; z-index: 15; background: rgba(243,241,233,.94); border-bottom: 1px solid var(--c-paper-line); padding: 10px 30px 0; backdrop-filter: blur(6px); }
+.c-map { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; padding-bottom: 8px; }
+.c-gate { display: inline-flex; align-items: baseline; gap: 4px; border: 1px solid var(--c-paper-line); padding: 3px 6px; font: 10px/1.3 "IBM Plex Mono", monospace; color: var(--c-paper-muted); }
+.c-gate b { font-weight: 500; }
+.c-gate i { font-style: normal; color: var(--c-paper-muted); font-size: 9px; border-left: 1px solid var(--c-paper-line); padding-left: 4px; }
+.c-gate.done { color: var(--c-green); border-color: #a9c9b7; }
+.c-gate.done i { color: var(--c-green); border-color: #a9c9b7; }
+.c-gate.active { background: var(--c-copper-deep); border-color: var(--c-copper-deep); color: #fff7ed; }
+.c-gate.active i { color: #f8d8bb; border-color: #d78d58; }
+.c-legend { margin-left: auto; font: 9.5px/1.4 "IBM Plex Mono", monospace; color: var(--c-paper-muted); }
+.c-stage-meta { display: flex; gap: 14px; flex-wrap: wrap; align-items: baseline; padding-bottom: 9px; font: 10.5px/1.4 "IBM Plex Mono", monospace; color: var(--c-paper-muted); }
+.c-stage-meta .repo { color: var(--c-ink); }
+.c-stage-meta .state { margin-left: auto; color: var(--c-copper-deep); }
+.c-stage-body { padding: 28px 40px 70px; max-width: 1080px; }
+.c-stage .c-btn { border-color: #9a9386; color: var(--c-ink); }
+.c-stage .c-btn:hover { border-color: var(--c-copper-deep); color: var(--c-copper-deep); }
+.c-stage .c-btn.c-btn-primary { background: var(--c-copper-deep); border-color: var(--c-copper-deep); color: #fff8f2; }
+.c-eyebrow { font: 600 10px/1.3 "IBM Plex Mono", monospace; letter-spacing: .14em; text-transform: uppercase; color: var(--c-copper-deep); margin-bottom: 7px; }
+.c-title { margin: 0 0 12px; font: 700 38px/1.04 "Archivo", "Segoe UI", sans-serif; letter-spacing: -.025em; max-width: 20ch; }
+.c-lede { margin: 0 0 16px; max-width: 70ch; font-size: 15px; line-height: 1.6; color: #3d4841; }
+.c-answer-note { display: flex; gap: 10px; align-items: baseline; margin: 16px 0 22px; padding: 10px 12px; border: 1px solid #d8b48e; background: #f8eddf; color: #6b4428; font-size: 13px; line-height: 1.5; }
+.c-key { flex: none; display: inline-grid; place-items: center; width: 19px; height: 19px; border: 1px solid currentColor; font: 600 10px/1 "IBM Plex Mono", monospace; }
+.c-brief-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin: 22px 0; }
+.c-brief-grid h2, .c-h2 { margin: 0 0 5px; font: 600 11px/1.3 "IBM Plex Mono", monospace; letter-spacing: .1em; text-transform: uppercase; color: var(--c-paper-muted); }
+.c-brief-grid p { margin: 0; font-size: 13.5px; line-height: 1.6; }
+.c-table { width: 100%; border-collapse: collapse; margin: 12px 0 22px; font-size: 12.5px; line-height: 1.5; }
+.c-table th { text-align: left; font: 600 10px/1.3 "IBM Plex Mono", monospace; letter-spacing: .08em; text-transform: uppercase; color: var(--c-paper-muted); padding: 7px 8px; border-bottom: 1px solid var(--c-paper-line); }
+.c-table td { padding: 8px; border-bottom: 1px solid var(--c-paper-line); vertical-align: top; }
+.c-table tr.rec td { background: #f8eddf; }
+.c-table .tag { font: 9.5px/1.3 "IBM Plex Mono", monospace; color: var(--c-copper-deep); border: 1px solid #d8b48e; padding: 1px 4px; }
+.c-ledger { border: 1px solid var(--c-paper-line); background: #faf8f1; padding: 14px 16px; font: 11px/1.55 "IBM Plex Mono", monospace; margin-top: 20px; }
+.c-ledger-head { display: flex; justify-content: space-between; gap: 10px; border-bottom: 1px solid var(--c-paper-line); padding-bottom: 7px; margin-bottom: 8px; }
+.c-ledger-head b { font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: var(--c-copper-deep); }
+.c-ledger-head span { font-size: 9px; letter-spacing: .1em; text-transform: uppercase; color: var(--c-green); }
+.c-ledger dl { margin: 0; }
+.c-ledger dl div { display: grid; grid-template-columns: 92px minmax(0, 1fr); gap: 2px 8px; padding: 2px 0; }
+.c-ledger dt { color: var(--c-paper-muted); }
+.c-ledger dd { margin: 0; overflow-wrap: anywhere; }
+.c-ledger-quote { margin-top: 9px; padding: 8px 0 0 10px; border-left: 2px solid var(--c-copper-deep); border-top: 1px solid var(--c-paper-line); font: 12px/1.5 "Newsreader", Georgia, serif; }
+.c-tabs { display: flex; gap: 4px; flex-wrap: wrap; margin: 18px 0 14px; border-bottom: 1px solid var(--c-paper-line); }
+.c-tab { border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--c-paper-muted); padding: 7px 9px; font: 11px/1.3 "IBM Plex Mono", monospace; margin-bottom: -1px; }
+.c-tab[aria-pressed="true"] { color: var(--c-ink); border-bottom-color: var(--c-copper-deep); }
+.c-diff { border: 1px solid var(--c-paper-line); background: #faf8f1; }
+.c-diff-file { padding: 7px 11px; background: #e9e4d7; border-top: 1px solid var(--c-paper-line); border-bottom: 1px solid var(--c-paper-line); font: 11px/1.4 "IBM Plex Mono", monospace; }
+.c-diff-file:first-child { border-top: 0; }
+.c-diff-meta { padding: 3px 11px; color: var(--c-paper-muted); font: 10.5px/1.5 "IBM Plex Mono", monospace; }
+.c-diff-hunk { padding: 4px 11px; background: #e4ebe4; color: #2f5d7c; font: 10.5px/1.5 "IBM Plex Mono", monospace; }
+.c-diff-line { display: grid; grid-template-columns: 40px minmax(0, 1fr) 58px; gap: 6px; padding: 1px 9px; font: 11px/1.6 "IBM Plex Mono", Consolas, monospace; }
+.c-diff-line.add { background: #e4efe6; }
+.c-diff-line.del { background: #f6e4df; }
+.c-diff-line .ln { color: #9b9588; text-align: right; user-select: none; }
+.c-diff-line .code { white-space: pre-wrap; word-break: break-word; }
+.c-diff-line.add .code { color: #245338; }
+.c-diff-line.del .code { color: #7e2c20; }
+.c-anns { display: flex; gap: 3px; justify-content: flex-end; }
+.c-ann { border: 1px solid #d8b48e; background: #f8eddf; color: var(--c-copper-deep); font: 9px/1.5 "IBM Plex Mono", monospace; padding: 0 4px; }
+.c-ann:hover { background: #f1dfc6; }
+.c-ann-panel { margin: 10px 11px; padding: 10px 12px; border: 1px solid #d8b48e; background: #fbf5e8; }
+.c-ann-panel-head { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; margin-bottom: 4px; }
+.c-ann-panel-head b { font: 600 11px/1.3 "IBM Plex Mono", monospace; color: var(--c-copper-deep); }
+.c-ann-panel-head button { border: 0; background: transparent; color: var(--c-paper-muted); font: inherit; }
+.c-ann-panel p { margin: 0; font-size: 12.5px; line-height: 1.55; color: #4b554d; }
+.c-packet-item { padding: 9px 0; border-bottom: 1px solid var(--c-paper-line); }
+.c-packet-item .id { font: 10.5px/1.4 "IBM Plex Mono", monospace; color: var(--c-copper-deep); }
+.c-packet-item .what { font-size: 13px; line-height: 1.5; margin: 1px 0; }
+.c-packet-item .st { font: 10px/1.4 "IBM Plex Mono", monospace; color: var(--c-paper-muted); }
+.c-packet-item.pending .what { color: var(--c-copper-deep); }
+.c-packet-quote { margin: 6px 0 0; padding-left: 9px; border-left: 2px solid var(--c-paper-line); font: 12.5px/1.5 "Newsreader", Georgia, serif; }
+.c-packet-check { display: flex; justify-content: space-between; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--c-paper-line); font: 11px/1.5 "IBM Plex Mono", monospace; }
+.c-packet-check span:last-child { color: var(--c-green); }
+.c-packet-check button { border: 0; background: transparent; color: #2f5d7c; font: 10px/1.4 "IBM Plex Mono", monospace; text-decoration: underline; padding: 0; }
+.c-packet-log { margin: 5px 0 0; padding: 7px 8px; background: #efebdf; font: 10px/1.5 "IBM Plex Mono", monospace; white-space: pre-wrap; overflow: auto; max-height: 140px; }
+.c-attest-cta { display: flex; justify-content: space-between; gap: 16px; align-items: center; flex-wrap: wrap; margin-top: 22px; padding: 16px 18px; background: var(--c-ink); color: var(--c-paper); }
+.c-attest-cta p { margin: 0; font-size: 13px; line-height: 1.5; }
+.c-attest-cta .c-eyebrow { color: #d9a87a; margin-bottom: 3px; }
+.c-attest-cta .c-btn { border-color: var(--c-paper); color: var(--c-paper); }
+.c-attest-cta .c-btn:hover { background: var(--c-copper-deep); border-color: var(--c-copper-deep); }
+.c-attest-cta .c-btn-primary { background: var(--c-paper); border-color: var(--c-paper); color: var(--c-ink); }
+.c-viva { max-width: 860px; }
+.c-progress { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; margin: 16px 0 8px; }
+.c-progress div { height: 4px; background: var(--c-paper-line); }
+.c-progress div.pass { background: var(--c-green); }
+.c-progress div.fail { background: var(--c-red); }
+.c-q { border-top: 1px solid var(--c-paper-line); padding: 18px 0 15px; }
+.c-q-head { display: grid; grid-template-columns: 36px minmax(0, 1fr); gap: 10px; }
+.c-q-num { font: 600 24px/1 "Archivo", sans-serif; color: var(--c-copper-deep); }
+.c-q h2 { margin: 0 0 3px; font: 600 18px/1.3 "Archivo", sans-serif; letter-spacing: -.01em; }
+.c-q .evidence { font: 10px/1.4 "IBM Plex Mono", monospace; color: var(--c-paper-muted); }
+.c-q textarea { width: 100%; min-height: 78px; margin-top: 9px; resize: vertical; background: #faf8f1; border: 1px solid var(--c-paper-line); padding: 9px 10px; font: 13.5px/1.55 "IBM Plex Sans", sans-serif; color: var(--c-ink); }
+.c-q textarea:focus { border-color: var(--c-copper-deep); outline: none; box-shadow: 0 0 0 1px var(--c-copper-deep); }
+.c-q-actions { display: flex; gap: 7px; flex-wrap: wrap; align-items: center; margin-top: 7px; }
+.c-q-sim { display: flex; gap: 4px; flex-wrap: wrap; align-items: center; font: 9.5px/1.3 "IBM Plex Mono", monospace; color: var(--c-paper-muted); }
+.c-q-sim button { border: 1px dashed var(--c-paper-line); background: transparent; color: var(--c-paper-muted); padding: 3px 6px; font: inherit; }
+.c-q-sim button:hover { border-color: var(--c-copper-deep); color: var(--c-copper-deep); }
+.c-feedback { margin-top: 9px; padding: 9px 11px; border-left: 3px solid #b9873f; background: #f7edda; font-size: 12.5px; line-height: 1.55; }
+.c-feedback.ok { border-color: var(--c-green); background: #e6f0e8; }
+.c-feedback.bad { border-color: var(--c-red); background: #f6e2dd; }
+.c-feedback b { display: block; font: 600 9.5px/1.3 "IBM Plex Mono", monospace; letter-spacing: .1em; text-transform: uppercase; margin-bottom: 3px; }
+.c-feedback p { margin: 0 0 6px; }
+.c-escalate { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 7px; padding-top: 7px; border-top: 1px dashed var(--c-paper-line); }
+.c-attest-final { margin-top: 22px; padding: 18px 20px; background: var(--c-ink); color: var(--c-paper); }
+.c-attest-final .c-eyebrow { color: #d9a87a; }
+.c-attest-final h2 { margin: 0 0 10px; font: 600 20px/1.3 "Archivo", sans-serif; max-width: 28ch; }
+.c-attest-final p { margin: 9px 0 0; font-size: 11.5px; line-height: 1.5; color: #c6c0b2; }
+.c-check { display: flex; gap: 9px; align-items: flex-start; width: 100%; text-align: left; border: 1px solid #6c746c; background: transparent; color: var(--c-paper); padding: 9px 11px; font: 12.5px/1.5 "IBM Plex Sans", sans-serif; }
+.c-check[aria-pressed="true"] { border-color: #d9a87a; background: #26302a; }
+.c-check .box { flex: none; width: 15px; height: 15px; border: 1px solid #b9b2a2; margin-top: 1px; display: grid; place-items: center; font-size: 11px; }
+.c-check[aria-pressed="true"] .box { background: #d9a87a; border-color: #d9a87a; color: #1c2320; }
+.c-attest-final .c-btn { border-color: var(--c-paper); color: var(--c-paper); }
+.c-attest-final .c-btn.primary { background: var(--c-paper); border-color: var(--c-paper); color: var(--c-ink); }
+.c-attest-locked { margin-top: 16px; padding: 11px 13px; border: 1px dashed var(--c-paper-line); color: var(--c-paper-muted); font-size: 12.5px; }
+.c-done-mark { display: inline-grid; place-items: center; width: 40px; height: 40px; border: 1px solid var(--c-green); color: var(--c-green); border-radius: 50%; font-size: 20px; margin-bottom: 12px; }
+.c-wait { padding: 30px 0; max-width: 820px; }
+.c-wait-title { margin: 0 0 12px; font: 700 54px/1 "Archivo", sans-serif; letter-spacing: -.035em; }
+.c-wait-table { margin: 20px 0; border-top: 1px solid var(--c-paper-line); }
+.c-wait-table > div { display: grid; grid-template-columns: 112px minmax(0, 1fr); gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--c-paper-line); font-size: 13px; line-height: 1.5; }
+.c-wait-table dt { font: 600 10px/1.7 "IBM Plex Mono", monospace; letter-spacing: .08em; text-transform: uppercase; color: var(--c-paper-muted); }
+.c-wait-table dd { margin: 0; }
+
+/* ------------------------------------------------------------------ */
+/* Modal                                                               */
+/* ------------------------------------------------------------------ */
+.modal-backdrop { position: fixed; inset: 0; z-index: 80; background: rgba(8,11,10,.62); display: grid; place-items: center; padding: 20px; }
+.modal-panel { width: min(560px, 100%); max-height: calc(100vh - 40px); overflow: auto; padding: 22px 24px; box-shadow: 12px 12px 0 rgba(0,0,0,.2); }
+.modal-panel.A { background: #08140d; color: #cfe7d6; border: 1px solid #4d7059; font-family: "Cascadia Code", Consolas, monospace; font-size: 13px; }
+.modal-panel.B, .modal-panel.C { background: var(--b-paper, #f2efe6); color: #1c2320; border: 1px solid #1c2320; font-family: "IBM Plex Sans", "Segoe UI", sans-serif; }
+.modal-kicker { font: 10px/1.3 "IBM Plex Mono", monospace; letter-spacing: .12em; text-transform: uppercase; color: #8a5a12; margin-bottom: 5px; }
+.modal-panel.A .modal-kicker { color: #ffbd5c; }
+.modal-panel h2 { margin: 0 0 8px; font: 500 27px/1.15 "Newsreader", Georgia, serif; letter-spacing: -.015em; }
+.modal-panel.A h2 { font: 600 18px/1.3 "Cascadia Code", Consolas, monospace; color: #e2f4e7; }
+.modal-intro { margin: 0 0 14px; font-size: 13.5px; line-height: 1.55; color: #4b554d; }
+.modal-panel.A .modal-intro { color: #9fc3aa; }
+.modal-panel fieldset { border: 0; padding: 0; margin: 0 0 14px; }
+.modal-panel legend { font: 600 10px/1.3 "IBM Plex Mono", monospace; letter-spacing: .1em; text-transform: uppercase; color: #5d665f; margin-bottom: 6px; }
+.modal-panel.A legend { color: #6f8f76; }
+.modal-panel label { display: flex; gap: 8px; align-items: flex-start; padding: 6px 0; font-size: 13.5px; line-height: 1.45; }
+.modal-panel label.disabled { color: #9b9588; }
+.modal-panel input[type="radio"] { margin-top: 3px; accent-color: #b23a2a; }
+.modal-panel.A input[type="radio"] { accent-color: #ffbd5c; }
+.modal-panel textarea { width: 100%; min-height: 74px; resize: vertical; margin-top: 5px; padding: 8px 9px; background: #faf8f1; border: 1px solid #b9b2a2; color: #1c2320; font: 13px/1.5 "IBM Plex Sans", sans-serif; }
+.modal-panel.A textarea { background: #06100a; border-color: #3c5a47; color: #d8f0df; font: 13px/1.5 "Cascadia Code", Consolas, monospace; }
+.modal-panel .modal-label { display: block; font: 600 10px/1.3 "IBM Plex Mono", monospace; letter-spacing: .1em; text-transform: uppercase; color: #5d665f; margin: 8px 0 0; }
+.modal-panel.A .modal-label { color: #6f8f76; }
+.modal-actions { display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap; margin-top: 18px; }
+.modal-actions button { border: 1px solid #1c2320; background: transparent; color: #1c2320; padding: 8px 13px; font: 500 13px/1.2 "IBM Plex Sans", sans-serif; }
+.modal-actions .modal-submit { background: #1c2320; color: #f2efe6; }
+.modal-actions .modal-submit:hover { background: #b23a2a; border-color: #b23a2a; }
+.modal-panel.A .modal-actions button { border-color: #4d7059; color: #cfe7d6; font: 13px/1.2 "Cascadia Code", Consolas, monospace; }
+.modal-panel.A .modal-actions .modal-submit { background: #ffbd5c; border-color: #ffbd5c; color: #1a1306; }
+.modal-panel.A .modal-actions .modal-submit:hover { background: #ffd08a; }
+
+/* ------------------------------------------------------------------ */
+/* Responsive                                                          */
+/* ------------------------------------------------------------------ */
+@media (max-width: 1180px) {
+  .b-decision-grid, .b-review-grid { grid-template-columns: minmax(0, 1fr); }
+  .b-ledger, .b-packet { position: static; }
+  .b-ledger { margin-top: 24px; }
+  .b-packet { margin-top: 24px; }
+  .vC { grid-template-columns: 350px minmax(0, 1fr); }
+  .c-stage-body { padding: 24px 26px 60px; }
+}
+@media (max-width: 900px) {
+  .proto-question { display: none; }
+  .b-shell { grid-template-columns: minmax(0, 1fr); }
+  .b-rail { border-right: 0; border-bottom: 1px solid var(--b-line); min-height: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 0 24px; }
+  .b-rail-section { margin-bottom: 12px; }
+  .b-main { padding: 24px 22px 40px; }
+  .vC { grid-template-columns: minmax(0, 1fr); height: auto; min-height: 0; }
+  .c-console { border-right: 0; border-bottom: 1px solid var(--c-line); height: auto; min-height: 0; }
+  .c-console-body { max-height: 420px; }
+  .c-stage { height: auto; overflow: visible; }
+  .c-stage-head { position: static; }
+  .b-wait, .c-brief-grid { grid-template-columns: minmax(0, 1fr); }
+  .b-wait { gap: 24px; padding-top: 26px; }
+  .b-wait-title, .c-wait-title { font-size: 44px; }
+  .b-title { font-size: 34px; }
+  .c-title { font-size: 32px; }
+}
+@media (max-width: 640px) {
+  .proto-strip { padding: 7px 10px; }
+  .proto-tools button { padding: 4px 6px; font-size: 11px; }
+  .proto-dock { left: 10px; right: 10px; bottom: 10px; transform: none; justify-content: space-between; }
+  .dock-label { min-width: 0; flex: 1; }
+  .dock-hint { display: none; }
+  .b-rail { grid-template-columns: minmax(0, 1fr); }
+  .b-top { height: auto; padding: 12px 18px; gap: 10px; }
+  .b-top-state { margin-left: 0; }
+  .b-main { padding: 20px 16px 34px; }
+  .c-stage-head { padding: 9px 16px 0; }
+  .c-stage-body { padding: 20px 16px 50px; }
+  .c-map { gap: 3px; }
+  .c-gate { padding: 2px 4px; font-size: 9px; }
+  .c-legend { display: none; }
+  .t-facts > div, .b-facts > div, .c-facts div { grid-template-columns: 1fr; gap: 1px; }
+  .t-check { grid-template-columns: 1fr; gap: 2px; }
+  .t-check-time { text-align: left; }
+  .b-q-head { grid-template-columns: 28px minmax(0, 1fr); }
+  .b-q-num { font-size: 21px; }
+  .term { font-size: 12px; }
+  .t-opt { grid-template-columns: 32px minmax(0, 1fr); }
+  .t-diff-line, .b-diff-line, .c-diff-line { grid-template-columns: 32px minmax(0, 1fr) auto; }
+}
+</style>
+</head>
+<body data-variant="A">
+<a class="visually-hidden" href="#stage">Skip to prototype</a>
+
+<header class="proto-strip">
+  <span class="proto-badge">PROTOTYPE</span>
+  <span class="proto-question">Decision &amp; review experience — what should the developer see when Forge stops?</span>
+  <div class="proto-tools" role="group" aria-label="Prototype flow">
+    <button data-action="flow" data-flow="decision" aria-pressed="true">Decision</button>
+    <button data-action="flow" data-flow="review" aria-pressed="false">Review</button>
+    <button data-action="flow" data-flow="attest" aria-pressed="false">Attestation</button>
+    <button data-action="away" aria-pressed="false">Away</button>
+  </div>
+  <span class="tool-sep" aria-hidden="true"></span>
+  <div class="proto-tools">
+    <button data-action="toggle-state" aria-pressed="false">State</button>
+    <button data-action="toggle-notes" aria-pressed="false">Notes</button>
+    <button data-action="reset">Reset</button>
+  </div>
+</header>
+
+<main id="stage" aria-live="polite"></main>
+
+<aside id="state-drawer" class="drawer" hidden aria-label="Prototype state"></aside>
+
+<aside id="notes-drawer" class="drawer" hidden aria-label="Prototype design notes">
+  <button class="drawer-close" data-action="toggle-notes" aria-label="Close notes">×</button>
+  <div class="drawer-kicker">Prototype notes</div>
+  <h2>What this is testing</h2>
+  <p>What the developer sees when Forge stops for a mid-flight decision, how they review the result, and how they attest it. The surface split is the decision: terminal-only, local web, or both.</p>
+  <p>The sample task is <strong>T-042 · Make webhook delivery idempotent</strong>. Forge hits a hard policy trigger (<code>schema / data migration</code>) at step 3 and asks where idempotency keys should live.</p>
+
+  <h3>A · Terminal-native</h3>
+  <p><strong>Split:</strong> plan, decision, permission, review and attestation all live in the terminal.</p>
+  <ul>
+    <li><strong>Best at:</strong> zero context switch, SSH, speed, scriptability.</li>
+    <li><strong>Weak at:</strong> diff review, long rationale, annotation, evidence browsing.</li>
+    <li><strong>Away:</strong> state is on disk; closing the terminal is safe. <code>forge resume T-042</code> reprints the pending gate. No timeout.</li>
+    <li><strong>Risk:</strong> the review becomes a pager, not a place to think.</li>
+  </ul>
+
+  <h3>B · Local web cockpit</h3>
+  <p><strong>Split:</strong> all four gates live in the local web; the terminal starts the server and shows a log.</p>
+  <ul>
+    <li><strong>Best at:</strong> annotated diff, evidence, rationale, attestation coaching.</li>
+    <li><strong>Weak at:</strong> context switch on every decision; server lifecycle; SSH requires a tunnel.</li>
+    <li><strong>Away:</strong> the browser can close and the server can stop. <code>forge resume T-042</code> reacquires the lock, verifies the worktree, and prints a fresh local URL. Nothing expires.</li>
+    <li><strong>Risk:</strong> a browser tab becomes the product, and the terminal becomes a launcher.</li>
+  </ul>
+
+  <h3>C · Hybrid by gate</h3>
+  <p><strong>Split:</strong> decisions and permissions in the terminal; plan review, result review and attestation in the local web.</p>
+  <ul>
+    <li><strong>Best at:</strong> fast decisions in flow, rich review where it matters.</li>
+    <li><strong>Weak at:</strong> two surfaces to build and keep in sync; the handoff must be obvious.</li>
+    <li><strong>Away:</strong> the terminal keeps the gate receipt; the web room can close. <code>forge resume T-042</code> restores both. No timeout.</li>
+    <li><strong>Risk:</strong> the developer answers in the terminal but reviews in the browser, and the decision record drifts between them.</li>
+  </ul>
+
+  <h3>What to judge</h3>
+  <ul>
+    <li>Where do you want to <em>decide</em>? Where do you want to <em>review</em>?</li>
+    <li>Is the decision card complete enough to answer without opening the diff?</li>
+    <li>Does the terminal review lose too much? Does the web review make the decision feel too far away?</li>
+    <li>Is the attestation strict enough? Too strict? What should happen after two failed attempts?</li>
+    <li>Does “delegate to Forge for analysis” preserve human ownership, or is it auto-approval in disguise?</li>
+    <li>Is “no default” the right answer when no option is safe?</li>
+  </ul>
+
+  <h3>Open questions for the resolution</h3>
+  <ul>
+    <li><strong>Surface split:</strong> A, B, C, or a variant of C.</li>
+    <li><strong>Delegate:</strong> analysis only (Forge researches and re-asks), decision delegated to the agent with constraints, or delegated to a teammate (needs shared state, not v1).</li>
+    <li><strong>Attestation failure:</strong> stop after two failed attempts, stay in review with coaching, or allow a “not understood” flag that blocks merge.</li>
+    <li><strong>Away:</strong> no timeout (shown) vs. a reminder. Neither may auto-approve.</li>
+  </ul>
+
+  <h3>Prototype constraints</h3>
+  <ul>
+    <li>Single HTML file; no backend, no persistence; state resets on reload.</li>
+    <li>The Postgres diff is rendered for every choice. Choosing another option records it in state but does not redraw the diff.</li>
+    <li>Attestation grading is simulated: use the “strong / vague / wrong” buttons to see each state. Typing an answer of 40+ characters records it as strong.</li>
+    <li>Arrow keys switch variants when focus is not in a field.</li>
+    <li>Deep links: <code>?variant=B&amp;flow=review&amp;decided=1</code> opens a flow directly; add <code>&amp;answered=1</code> for the final attestation, <code>&amp;done=1</code> for the done screen, <code>&amp;away=1</code> for the waiting screen.</li>
+  </ul>
+</aside>
+
+<nav class="proto-dock" aria-label="Prototype variant switcher">
+  <button data-action="prev-variant" aria-label="Previous variant">←</button>
+  <div class="dock-label">
+    <b><span id="dock-key">A</span> · <span id="dock-name">Terminal-native</span></b>
+    <span id="dock-split">All gates in the terminal</span>
+  </div>
+  <button data-action="next-variant" aria-label="Next variant">→</button>
+  <span class="dock-hint">← → switch</span>
+</nav>
+
+<script>
+(() => {
+  'use strict';
+
+  /* ------------------------------------------------------------------ */
+  /* Sample content                                                      */
+  /* ------------------------------------------------------------------ */
+  const TASK = {
+    id: 'T-042',
+    title: 'Make webhook delivery idempotent',
+    repo: 'acme/payments',
+    branch: 'forge/T-042',
+    base: 'a1b2c3d',
+    step: '3 of 6',
+    risk: 'FULL',
+    owner: 'karl'
+  };
+
+  const LEDGER_PATH = '.forge/decisions/2026-11-02-0003-idempotency-store.md';
+  const ATTEST_PATH = '.forge/attestations/T-042.md';
+  const WAIT = '4m 12s';
+
+  const DECISION = {
+    id: 'D-3',
+    title: 'Where should idempotency keys live?',
+    trigger: 'schema / data migration',
+    policy: 'policy v3 · hard trigger',
+    why: 'Step 3 changes the webhook handler. Stripe can replay a delivery for up to 7 days; a replay must not charge twice.',
+    context: 'Three app instances behind a load balancer. Postgres 15 is already in the stack; Redis is not. Delivery IDs are globally unique per endpoint.',
+    options: [
+      {
+        n: 1,
+        title: 'Postgres table',
+        sub: 'webhook_events',
+        summary: 'Durable, shared across instances, survives deploys.',
+        chips: ['durable', 'shared', '+1 migration'],
+        recommended: true,
+        consequence: 'One migration, one index, and a nightly expiry job. Reversible with a down migration.'
+      },
+      {
+        n: 2,
+        title: 'In-memory LRU',
+        sub: 'per-process Map',
+        summary: 'No migration; keys vanish on restart and are not shared.',
+        chips: ['fastest', 'restart-unsafe', 'per-instance'],
+        recommended: false,
+        consequence: 'A deploy or a second instance can replay a delivery and charge twice. Only safe for a single, never-restarted process.'
+      },
+      {
+        n: 3,
+        title: 'Redis SETNX',
+        sub: 'new dependency',
+        summary: 'Durable and shared, but adds a service and an ops surface.',
+        chips: ['durable', 'new dependency', 'TTL policy'],
+        recommended: false,
+        consequence: 'Requires Redis in every environment, a TTL policy, and a new failure mode when Redis is down.'
+      }
+    ],
+    recommendation: 1,
+    reversibility: 'Reversible — a down migration drops the table. Only replay keys are lost; no customer data.',
+    blast: '1 migration · 3 files · 2 tests',
+    default: 'None. Forge will not choose a store for you.'
+  };
+
+  const SAMPLE_RATIONALES = {
+    1: "We already run Postgres, and the replay window has to survive restarts and be shared by all three instances. Redis would add an ops surface we don't want for a 7-day key; memory loses keys on deploy. A table is a reversible migration and easy to inspect.",
+    2: "This is a single-instance deployment and a deploy can wait; an in-memory LRU is enough for now and avoids a migration. I accept that keys are lost on restart.",
+    3: "Redis is already on the roadmap for rate limiting, so using SETNX now avoids a second store. I accept the extra service and the TTL policy it brings."
+  };
+
+  const QUESTIONS = [
+    {
+      n: 1,
+      text: 'Why Postgres rather than Redis or an in-memory cache for the idempotency keys?',
+      evidence: 'D-3 · options 1–3 · handler diff hunk 2',
+      strong: "Postgres is already in the stack and shared by all three instances; memory loses keys on restart. Redis would also work, but it adds a new service and ops surface for a 7-day key. The table is a reversible migration.",
+      vague: "Because it's the simplest option.",
+      wrong: 'Redis, because it keeps the keys out of the database.',
+      vagueFeedback: "That's not enough to attest. Name what breaks with the alternatives: memory loses keys on restart; Redis adds an ops surface. See D-3.",
+      wrongFeedback: 'That is inverted: you chose Postgres (D-3). Redis was option 3 and adds a dependency. Re-read the option trade-offs.',
+      explain: 'Postgres was chosen for durability across restarts and sharing across the three instances, without adding a new service. Redis is durable too, but adds an ops surface; memory is neither durable nor shared.',
+      evidenceText: 'D-3 · Store: Postgres\n  chosen: Postgres table `webhook_events`\n  rejected: in-memory LRU (restart-unsafe), Redis SETNX (new dependency)\n  rationale: human-authored, pinned to policy v3#a91f\n\nhandler.ts\n  const claimed = await events.claim(event.id, event.endpoint);\n  if (!claimed) return { status: "duplicate" };'
+    },
+    {
+      n: 2,
+      text: 'What happens when the same delivery arrives twice while the first is still in flight?',
+      evidence: 'handler diff hunk 2 · events.claim()',
+      strong: 'The primary key on the event id makes the second claim fail; the second request returns a duplicate without charging. If the first attempt fails, the release path deletes the claim so a retry can process it.',
+      vague: 'The database handles it.',
+      wrong: 'Both requests charge, but the test catches it.',
+      vagueFeedback: 'Too vague. Explain the claim before charge and what the second request returns. See the handler diff.',
+      wrongFeedback: 'No. The claim gates the charge; a duplicate must never reach charge. The release path handles a failed first attempt.',
+      explain: 'claim() inserts the event id with ON CONFLICT DO NOTHING. Only the winner reaches charge(); the loser returns duplicate. On failure, release() removes the claim so a retry can try again.',
+      evidenceText: 'handler.ts\n  const claimed = await events.claim(event.id, event.endpoint);\n  if (!claimed) return { status: "duplicate" };\n  try { await charge(event); } catch (err) {\n    await events.release(event.id);\n    throw err;\n  }\n\nevents.ts\n  insert into webhook_events (id, endpoint, expires_at)\n  values ($1, $2, now() + interval \'7 days\')\n  on conflict (id) do nothing'
+    },
+    {
+      n: 3,
+      text: 'You chose a 7-day replay window. What breaks on day 8, and is that acceptable?',
+      evidence: 'D-2 · migration · nightly expiry job',
+      strong: "A delivery older than 7 days could be charged twice if Stripe replays it. That's acceptable because Stripe's retry window is 7 days; the nightly job deletes expired keys, and D-2 records the assumption. If the window changes, D-2 must be revisited.",
+      vague: "Nothing, because Stripe doesn't retry after 7 days.",
+      wrong: 'The migration rolls back automatically.',
+      vagueFeedback: 'That is a claim, not a consequence. What happens if a day-8 replay arrives? State the duplicate-charge risk and why the window matches Stripe.',
+      wrongFeedback: 'No automatic rollback. The risk is a duplicate charge after the key expires; explain why the 7-day window is acceptable and what would trigger a revisit.',
+      explain: 'Keys expire after 7 days because Stripe stops retrying then. A day-8 replay would not find a key and could charge twice; the assumption is that no such replay arrives. D-2 owns that assumption.',
+      evidenceText: 'D-2 · Replay window: 7 days\n  approved at the plan gate\n  matches Stripe\'s retry window\n  nightly job deletes expired rows\n  revisit_if: Stripe changes its retry policy\n\nASSETS\n  A-3 · peak traffic < 50 rps\n  A-4 · single region'
+    }
+  ];
+
+  const DECISION_MAP = [
+    { id: 'D-1', title: 'Scope: webhook intake only', status: 'resolved', where: 'plan gate', gist: 'The charge service and its public interface are untouched.' },
+    { id: 'D-2', title: 'Replay window: 7 days', status: 'resolved', where: 'plan gate', gist: "Matches Stripe's retry window; storage stays small." },
+    { id: 'D-3', title: 'Idempotency store', status: 'dynamic', where: 'mid-flight', gist: '' },
+    { id: 'D-4', title: 'Backfill historical events: no', status: 'deferred', where: 'plan', gist: 'Revisit if replaying pre-migration events matters.' }
+  ];
+
+  const ASSUMPTIONS = [
+    { id: 'A-1', text: 'Postgres 15 or newer; timestamps are UTC.', risk: 'low', revisit: 'If the deployed Postgres is older or the clock source changes.' },
+    { id: 'A-2', text: 'Stripe delivery IDs are globally unique per endpoint.', risk: 'low', revisit: 'If another provider reuses IDs across endpoints.' },
+    { id: 'A-3', text: 'Peak webhook traffic stays under 50 rps.', risk: 'medium', revisit: 'If volume grows 10x; the expiry index may need partitioning.' },
+    { id: 'A-4', text: 'No cross-region replay; the deployment is single-region.', risk: 'medium', revisit: 'If the service becomes multi-region.' }
+  ];
+
+  const CHECKS = [
+    { id: 'test', name: 'pnpm test', result: '42 passed', time: '12:38' },
+    { id: 'build', name: 'pnpm build', result: 'clean', time: '12:39' },
+    { id: 'migrate', name: 'forge migrate:check', result: 'up / down clean', time: '12:40' },
+    { id: 'lint', name: 'pnpm lint', result: 'clean', time: '12:41' },
+    { id: 'manual', name: 'manual replay · Stripe CLI', result: '1 charge · 1 duplicate', time: '12:43' }
+  ];
+
+  const LOGS = {
+    test: '> vitest run\n\n ✓ test/webhooks/idempotency.test.ts (4 tests) 38ms\n ✓ test/webhooks/handler.test.ts (12 tests) 61ms\n ✓ test/charge.test.ts (26 tests) 104ms\n\n Test Files  3 passed (3)\n      Tests  42 passed (42)\n   Duration  1.24s',
+    build: '> tsc --noEmit && tsup src/index.ts\n\n ESM dist/index.js 48.2 KB\n CJS dist/index.cjs 51.7 KB\n DTS dist/index.d.ts 12.4 KB\n\n build clean in 2.8s',
+    migrate: '> forge migrate:check\n\n up   0032_webhook_events ......... ok\n down 0032_webhook_events ......... ok\n drift ............................. none\n\n migration is reversible',
+    lint: '> eslint . --max-warnings 0\n\n ✓ 0 errors\n ✓ 0 warnings\n ✓ 84 files checked',
+    manual: '> stripe trigger payment_intent.succeeded\n  → delivery evt_3P... 200 ok\n> stripe resend evt_3P...\n  → delivery evt_3P... 200 duplicate\n\ncharges created: 1\nwebhook_events rows: 1'
+  };
+
+  const DIFF = [
+    { t: 'file', text: 'db/migrations/0032_webhook_events.sql', stat: '+7' },
+    { t: 'meta', text: 'new file mode 100644' },
+    { t: 'hunk', text: '@@ -0,0 +1,7 @@' },
+    { t: 'add', n: 1, text: 'create table webhook_events (', anns: ['D-3'] },
+    { t: 'add', n: 2, text: '  id text primary key,' },
+    { t: 'add', n: 3, text: '  endpoint text not null,' },
+    { t: 'add', n: 4, text: '  received_at timestamptz not null default now(),', anns: ['A-1'] },
+    { t: 'add', n: 5, text: '  expires_at timestamptz not null', anns: ['D-2'] },
+    { t: 'add', n: 6, text: ');' },
+    { t: 'add', n: 7, text: 'create index webhook_events_expires_at_idx on webhook_events (expires_at);' },
+
+    { t: 'file', text: 'src/webhooks/events.ts', stat: '+22' },
+    { t: 'meta', text: 'new file mode 100644' },
+    { t: 'hunk', text: '@@ -0,0 +1,22 @@' },
+    { t: 'add', n: 1, text: 'export class WebhookEvents {' },
+    { t: 'add', n: 2, text: '  constructor(private db: Db) {}' },
+    { t: 'add', n: 3, text: '' },
+    { t: 'add', n: 4, text: '  async claim(id: string, endpoint: string): Promise<boolean> {' },
+    { t: 'add', n: 5, text: '    const result = await this.db.query(' },
+    { t: 'add', n: 6, text: "      'insert into webhook_events (id, endpoint, expires_at)'" },
+    { t: 'add', n: 7, text: "      + \" values ($1, $2, now() + interval '7 days')\"" },
+    { t: 'add', n: 8, text: "      + ' on conflict (id) do nothing'," },
+    { t: 'add', n: 9, text: '      [id, endpoint],' },
+    { t: 'add', n: 10, text: '    );' },
+    { t: 'add', n: 11, text: '    return result.rowCount === 1;' },
+    { t: 'add', n: 12, text: '  }' },
+    { t: 'add', n: 13, text: '' },
+    { t: 'add', n: 14, text: '  async release(id: string): Promise<void> {' },
+    { t: 'add', n: 15, text: "    await this.db.query('delete from webhook_events where id = $1', [id]);" },
+    { t: 'add', n: 16, text: '  }' },
+    { t: 'add', n: 17, text: '}' },
+
+    { t: 'file', text: 'src/webhooks/handler.ts', stat: '+14 −6' },
+    { t: 'hunk', text: '@@ -18,6 +18,14 @@ export async function handleWebhook(event: WebhookEvent) {' },
+    { t: 'del', n: 18, text: '  await charge(event);' },
+    { t: 'del', n: 19, text: '  return { status: "ok" };' },
+    { t: 'add', n: 18, text: '  const claimed = await events.claim(event.id, event.endpoint);', anns: ['D-3'] },
+    { t: 'add', n: 19, text: '  if (!claimed) return { status: "duplicate" };', anns: ['A-2'] },
+    { t: 'add', n: 20, text: '  try {' },
+    { t: 'add', n: 21, text: '    await charge(event);' },
+    { t: 'add', n: 22, text: '    return { status: "ok" };' },
+    { t: 'add', n: 23, text: '  } catch (err) {' },
+    { t: 'add', n: 24, text: '    await events.release(event.id);', anns: ['A-3'] },
+    { t: 'add', n: 25, text: '    throw err;' },
+    { t: 'add', n: 26, text: '  }' },
+
+    { t: 'file', text: 'test/webhooks/idempotency.test.ts', stat: '+72' },
+    { t: 'meta', text: 'new file mode 100644' },
+    { t: 'hunk', text: '@@ -0,0 +1,14 @@' },
+    { t: 'add', n: 1, text: 'it("charges once when the same delivery arrives twice", async () => {' },
+    { t: 'add', n: 2, text: '  const event = stripeEvent("evt_123");' },
+    { t: 'add', n: 3, text: '  const first = await handleWebhook(event);' },
+    { t: 'add', n: 4, text: '  const second = await handleWebhook(event);' },
+    { t: 'add', n: 5, text: '' },
+    { t: 'add', n: 6, text: '  expect(first.status).toBe("ok");' },
+    { t: 'add', n: 7, text: '  expect(second.status).toBe("duplicate");' },
+    { t: 'add', n: 8, text: '  expect(charge).toHaveBeenCalledTimes(1);' },
+    { t: 'add', n: 9, text: '});' }
+  ];
+
+  const ANNOTATIONS = {
+    'D-3': {
+      title: 'D-3 · Store: Postgres',
+      text: 'Chosen mid-flight. Postgres is already in the stack and shared across the three instances; memory loses keys on restart, and Redis adds an ops surface. The rationale is the human’s words, recorded verbatim.'
+    },
+    'D-2': {
+      title: 'D-2 · Replay window: 7 days',
+      text: "Approved with the plan. Keys expire at the edge of Stripe's retry window; the nightly job deletes expired rows. Revisit if Stripe changes its retry policy."
+    },
+    'D-1': {
+      title: 'D-1 · Scope: webhook intake only',
+      text: 'The charge service and its public interface are untouched. The change is confined to the delivery path.'
+    },
+    'A-1': {
+      title: 'A-1 · Assumption: UTC, Postgres 15+',
+      text: 'If the deployed Postgres is older or the clock source is not UTC, the migration or the expiry window breaks.'
+    },
+    'A-2': {
+      title: 'A-2 · Assumption: unique delivery IDs',
+      text: 'Delivery IDs are treated as globally unique per endpoint. If a provider reuses IDs, a legitimate event could be dropped as a duplicate.'
+    },
+    'A-3': {
+      title: 'A-3 · Assumption: release on failure',
+      text: 'If the process dies between charge and release, the claim remains until expiry. That is safer than a duplicate charge, but a failed charge may need a manual replay.'
+    }
+  };
+
+  const VARIANTS = {
+    A: { name: 'Terminal-native', split: 'All gates in the terminal' },
+    B: { name: 'Local web cockpit', split: 'All gates in the local web' },
+    C: { name: 'Hybrid by gate', split: 'Decide in the terminal · review in the web' }
+  };
+
+  /* ------------------------------------------------------------------ */
+  /* State                                                               */
+  /* ------------------------------------------------------------------ */
+  const fresh = () => ({
+    variant: readVariant(),
+    flow: 'decision',
+    decision: {
+      status: 'pending',
+      choice: null,
+      rationale: '',
+      error: null,
+      deferWhen: null,
+      deferNote: '',
+      delegateScope: null,
+      delegateNote: '',
+      rejectReason: null,
+      rejectNote: '',
+      recordedAt: null,
+      evidenceReturned: false
+    },
+    attestation: {
+      answers: ['', '', ''],
+      grades: [null, null, null],
+      failures: [0, 0, 0],
+      qIndex: 0,
+      finalChecked: false,
+      passed: false,
+      evidenceOpen: [false, false, false],
+      explainOpen: [false, false, false]
+    },
+    ledger: [],
+    reviewTab: 'diff',
+    railTab: 'decisions',
+    openAnn: null,
+    openCheck: null,
+    modal: null,
+    away: false,
+    awayFrom: 'decision',
+    stateOpen: false,
+    notesOpen: false,
+    done: false,
+    stopped: false
+  });
+
+  let state = fresh();
+  let resetScroll = false;
+  applyDeepLink();
+
+  function applyDeepLink() {
+    try {
+      const p = new URLSearchParams(location.search);
+      const flow = p.get('flow');
+      if (['decision', 'review', 'attest'].includes(flow)) state.flow = flow;
+      const choice = Number(p.get('choice')) || 1;
+      if (p.get('choice') && p.get('decided') !== '1') {
+        const option = DECISION.options.find(o => o.n === choice) || DECISION.options[0];
+        state.decision.choice = option.n;
+        state.decision.rationale = SAMPLE_RATIONALES[option.n] || SAMPLE_RATIONALES[1];
+      }
+      if (p.get('decided') === '1') {
+        const option = DECISION.options.find(o => o.n === choice) || DECISION.options[0];
+        state.decision.status = 'resolved';
+        state.decision.choice = option.n;
+        state.decision.rationale = SAMPLE_RATIONALES[option.n] || SAMPLE_RATIONALES[1];
+        state.decision.recordedAt = '14:06';
+        state.ledger.push({ kind: 'decision', id: DECISION.id, at: '14:06', text: option.title + ' — ' + state.decision.rationale });
+      }
+      if (p.get('answered') === '1') {
+        state.attestation.answers = QUESTIONS.map(q => q.strong);
+        state.attestation.grades = ['strong', 'strong', 'strong'];
+        state.attestation.qIndex = QUESTIONS.length;
+      }
+      if (p.get('fail') === '1') {
+        state.attestation.answers[0] = QUESTIONS[0].vague;
+        state.attestation.grades[0] = 'vague';
+        state.attestation.failures[0] = 2;
+        state.attestation.qIndex = 0;
+      }
+      if (p.get('away') === '1') {
+        state.away = true;
+        state.awayFrom = state.flow;
+      }
+      if (p.get('stopped') === '1') {
+        state.decision.status = 'resolved';
+        state.stopped = true;
+      }
+      const modal = p.get('modal');
+      if (['defer', 'delegate', 'reject'].includes(modal)) state.modal = modal;
+      if (p.get('state') === '1') state.stateOpen = true;
+      if (p.get('notes') === '1') state.notesOpen = true;
+      if (p.get('done') === '1') {
+        state.decision.status = 'resolved';
+        state.attestation.answers = QUESTIONS.map(q => q.strong);
+        state.attestation.grades = ['strong', 'strong', 'strong'];
+        state.attestation.qIndex = QUESTIONS.length;
+        state.attestation.finalChecked = true;
+        state.attestation.passed = true;
+        state.done = true;
+        state.flow = 'attest';
+        state.ledger.push({ kind: 'attestation', id: TASK.id, at: '14:12', text: 'Attested by ' + TASK.owner + ' (deep link).' });
+      }
+    } catch (_) { /* ignore malformed deep links */ }
+  }
+
+  function readVariant() {
+    try {
+      const v = new URLSearchParams(location.search).get('variant');
+      return ['A', 'B', 'C'].includes(v) ? v : 'A';
+    } catch (_) {
+      return 'A';
+    }
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Small helpers                                                       */
+  /* ------------------------------------------------------------------ */
+  const $ = (sel, root = document) => root.querySelector(sel);
+  const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
+  const ESC = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+  const esc = (value = '') => String(value).replace(/[&<>"']/g, c => ESC[c]);
+  const words = value => (String(value).trim().match(/\S+/g) || []).length;
+  const currentOption = () => DECISION.options.find(o => o.n === state.decision.choice) || null;
+  const canReview = () => state.decision.status === 'resolved' || state.done;
+  const allPassed = () => state.attestation.grades.every(g => g === 'strong');
+  const firstUnanswered = () => {
+    const i = state.attestation.grades.findIndex(g => g !== 'strong');
+    return i === -1 ? QUESTIONS.length : i;
+  };
+
+  function taskStateLabel() {
+    if (state.done) return 'done — attested';
+    if (state.stopped) return 'stopped — attestation';
+    if (state.away) return 'paused — waiting for you';
+    if (state.decision.status === 'pending') return 'decision — waiting';
+    if (state.decision.status === 'deferred') return 'paused — decision deferred';
+    if (state.decision.status === 'delegated') return 'paused — Forge investigating';
+    if (state.decision.status === 'rejected') return 'planning — decision sent back';
+    if (state.flow === 'attest') return 'review — attestation';
+    if (state.flow === 'review') return 'review — ready';
+    return 'executing — simulated';
+  }
+
+  function decisionStatusLabel() {
+    if (state.decision.status === 'resolved') return 'resolved mid-flight';
+    if (state.decision.status === 'pending') return 'pending — blocking';
+    if (state.decision.status === 'deferred') return 'deferred — paused';
+    if (state.decision.status === 'delegated') return 'delegated for analysis';
+    if (state.decision.status === 'rejected') return 'sent back to planning';
+    return state.decision.status;
+  }
+
+  function decisionGist() {
+    if (state.decision.status === 'resolved') {
+      const o = currentOption();
+      return o ? 'Chosen: ' + o.title + '. ' + DECISION.reversibility : 'Resolved.';
+    }
+    if (state.decision.status === 'deferred') return 'Deferred. The task is paused; the request stays pending.';
+    if (state.decision.status === 'delegated') return 'Forge is investigating. The decision is still the human’s.';
+    if (state.decision.status === 'rejected') return 'Sent back to planning.';
+    return 'The review is locked until this is resolved.';
+  }
+
+  function mapStatus(item) {
+    if (item.status !== 'dynamic') return item.status;
+    return state.decision.status === 'resolved' ? 'resolved' : state.decision.status;
+  }
+
+  function mapGist(item) {
+    if (item.status !== 'dynamic') return item.gist;
+    return decisionGist();
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Render root                                                         */
+  /* ------------------------------------------------------------------ */
+  function render() {
+    const pageY = window.scrollY;
+    const oldTerm = $('.term-screen');
+    const oldStage = $('.c-stage');
+    const oldConsole = $('.c-console-body');
+    const termScroll = oldTerm ? oldTerm.scrollTop : 0;
+    const stageScroll = oldStage ? oldStage.scrollTop : 0;
+    const consoleScroll = oldConsole ? oldConsole.scrollTop : 0;
+
+    document.body.dataset.variant = state.variant;
+    document.body.dataset.flow = state.flow;
+    const stage = $('#stage');
+    stage.innerHTML = state.variant === 'A' ? renderA() : state.variant === 'B' ? renderB() : renderC();
+    if (state.modal) stage.insertAdjacentHTML('beforeend', renderModal());
+
+    if (resetScroll) {
+      window.scrollTo(0, 0);
+      $$('.term-screen, .c-stage, .c-console-body').forEach(el => { el.scrollTop = 0; });
+      resetScroll = false;
+    } else {
+      window.scrollTo(0, pageY);
+      const term = $('.term-screen');
+      if (term) term.scrollTop = termScroll;
+      const cStage = $('.c-stage');
+      if (cStage) cStage.scrollTop = stageScroll;
+      const cConsole = $('.c-console-body');
+      if (cConsole) cConsole.scrollTop = consoleScroll;
+    }
+
+    renderDock();
+    renderTopButtons();
+    renderStateDrawer();
+    renderNotesDrawer();
+    afterRenderFocus();
+  }
+
+  function afterRenderFocus() {
+    if (!state.modal) return;
+    const panel = $('.modal-panel');
+    const first = panel && panel.querySelector('input, textarea, button');
+    if (first) first.focus({ preventScroll: true });
+  }
+
+  function renderDock() {
+    const key = $('#dock-key');
+    const name = $('#dock-name');
+    const split = $('#dock-split');
+    if (key) key.textContent = state.variant;
+    if (name) name.textContent = VARIANTS[state.variant].name;
+    if (split) split.textContent = VARIANTS[state.variant].split;
+  }
+
+  function renderTopButtons() {
+    $$('.proto-strip [data-action="flow"]').forEach(b => {
+      b.setAttribute('aria-pressed', String(!state.away && !state.done && b.dataset.flow === state.flow));
+    });
+    const away = $('[data-action="away"]');
+    if (away) away.setAttribute('aria-pressed', String(state.away));
+    const st = $('[data-action="toggle-state"]');
+    if (st) st.setAttribute('aria-pressed', String(state.stateOpen));
+    const no = $('[data-action="toggle-notes"]');
+    if (no) no.setAttribute('aria-pressed', String(state.notesOpen));
+  }
+
+  function renderStateDrawer() {
+    const el = $('#state-drawer');
+    el.hidden = !state.stateOpen;
+    if (!el || el.hidden) return;
+    const d = state.decision;
+    const o = currentOption();
+    const entries = state.ledger.length
+      ? state.ledger.map(e => `<div class="ledger-mini">${esc(e.kind)} · ${esc(e.id)} · ${esc(e.at)}\n${esc(e.text)}</div>`).join('')
+      : '<p class="muted">No ledger entries yet.</p>';
+    el.innerHTML = `
+      <button class="drawer-close" data-action="toggle-state" aria-label="Close state">×</button>
+      <div class="drawer-kicker">Prototype state · not product UI</div>
+      <h2>What the model knows</h2>
+      <table class="state-table">
+        <tr><th>variant</th><td>${esc(state.variant)} · ${esc(VARIANTS[state.variant].name)}</td></tr>
+        <tr><th>flow</th><td>${esc(state.away ? 'away' : state.flow)}</td></tr>
+        <tr><th>task state</th><td>${esc(taskStateLabel())}</td></tr>
+        <tr><th>decision</th><td>${esc(d.status)}${d.choice ? ' · option ' + d.choice : ''}</td></tr>
+        <tr><th>chosen</th><td>${esc(o ? o.title : '—')}</td></tr>
+        <tr><th>rationale</th><td>${esc(d.rationale || '—')}</td></tr>
+        <tr><th>attestation</th><td>${state.attestation.grades.map((g, i) => 'Q' + (i + 1) + ': ' + (g || '—') + ' (' + state.attestation.failures[i] + ' fail)').join('<br>')}</td></tr>
+        <tr><th>final</th><td>${state.done ? 'done' : state.stopped ? 'stopped' : state.attestation.finalChecked ? 'checkbox checked' : 'not attested'}</td></tr>
+        <tr><th>away</th><td>${state.away ? 'yes · ' + esc(state.awayFrom) : 'no'}</td></tr>
+        <tr><th>modal</th><td>${esc(state.modal || '—')}</td></tr>
+        <tr><th>ledger</th><td>${state.ledger.length} ${state.ledger.length === 1 ? 'entry' : 'entries'}</td></tr>
+      </table>
+      <h3>Ledger entries</h3>
+      ${entries}
+      <div class="state-note">No persistence. Reload resets everything. The rationale and answers are user input; the rest is sample content for the prototype.</div>
+    `;
+  }
+
+  function renderNotesDrawer() {
+    const el = $('#notes-drawer');
+    if (el) el.hidden = !state.notesOpen;
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* A — Terminal-native                                                 */
+  /* ------------------------------------------------------------------ */
+  function shellA(body, foot) {
+    return `<section class="vA"><div class="term">
+      <div class="term-bar">
+        <span class="dots"><span class="dot"></span><span class="dot"></span><span class="dot"></span></span>
+        <span class="title">forge — ${TASK.repo} — ${TASK.id}</span>
+        <span class="size">132×42</span>
+      </div>
+      <div class="term-screen">${renderATermStatus()}${body}</div>
+      <div class="term-foot">${foot}</div>
+    </div></section>`;
+  }
+
+  function renderATermStatus() {
+    return `<div class="t-status">
+      <div class="t-status-row"><span class="t-green">${TASK.id}</span> ${esc(TASK.title)}</div>
+      <div class="t-status-row"><span class="t-dim">branch</span> ${esc(TASK.branch)} <span class="t-dim">base</span> ${esc(TASK.base)} <span class="t-dim">step</span> ${esc(TASK.step)} <span class="t-risk">risk ${esc(TASK.risk)}</span> <span class="t-dim">state</span> <span class="t-amber">${esc(taskStateLabel())}</span></div>
+      <div class="t-rule">──────────────────────────────────────────────────────────────────────────────────────────────</div>
+    </div>`;
+  }
+
+  function renderATermFoot() {
+    if (state.away) return `<span>resume · <span class="key">forge resume ${TASK.id}</span></span><span>no timeout · closing this terminal is safe</span>`;
+    if (state.done) return `<span>attested · branch is yours to merge</span><span>← → switch variant</span>`;
+    if (state.flow === 'decision' && state.decision.status === 'pending') {
+      return `<span><span class="key">1 2 3</span> choose · <span class="key">d</span> defer · <span class="key">g</span> delegate · <span class="key">x</span> reject · <span class="key">↵</span> record</span><span>← → switch variant</span>`;
+    }
+    if (state.flow === 'review') return `<span><span class="key">a</span> attest · <span class="key">1–4</span> tabs · <span class="key">← →</span> switch variant</span><span>packet 1/1</span>`;
+    if (state.stopped) return `<span>stopped · nothing merged</span><span>reopen review to try again</span>`;
+    if (state.flow === 'attest' && allPassed()) return `<span>check the box · record attestation</span><span>merge remains yours</span>`;
+    if (state.flow === 'attest') return `<span><span class="key">↵</span> submit · <span class="key">e</span> evidence · <span class="key">s</span> stop</span><span>answers are recorded verbatim</span>`;
+    return `<span>← → switch variant</span><span>prototype</span>`;
+  }
+
+  function renderA() {
+    if (state.done) return shellA(renderADone(), renderATermFoot());
+    if (state.away) return shellA(renderAAway(), renderATermFoot());
+    let body;
+    if (state.flow === 'decision') body = renderADecision();
+    else if (state.flow === 'review') body = canReview() ? renderAReview() : renderALocked('review');
+    else body = canReview() ? (state.stopped ? renderAStopped() : renderAAttest()) : renderALocked('attestation');
+    return shellA(body, renderATermFoot());
+  }
+
+  function optionA(o) {
+    const sel = state.decision.choice === o.n;
+    return `<button class="t-opt" data-action="choose" data-choice="${o.n}" aria-pressed="${sel}">
+      <span class="t-key">[${o.n}]</span>
+      <span class="t-opt-main">
+        <span class="t-opt-title">${esc(o.title)}${o.recommended ? ' <em>★ recommended</em>' : ''}</span>
+        <span class="t-opt-sub">${esc(o.sub)} — ${esc(o.summary)}</span>
+        <span class="t-opt-chips">${o.chips.map(c => `<span class="t-opt-chip">${esc(c)}</span>`).join('')}</span>
+        ${sel ? `<span class="t-opt-sub" style="margin-top:4px;color:#e8d5aa">${esc(o.consequence)}</span>` : ''}
+      </span>
+    </button>`;
+  }
+
+  function renderARationale() {
+    return `<div class="t-rationale">
+      <div class="t-rationale-head"><span class="t-amber">rationale · required</span><span class="t-dim">your words, written verbatim · <span data-live="words">${words(state.decision.rationale)}</span> words</span></div>
+      <textarea data-bind="rationale" rows="4" aria-label="Your rationale">${esc(state.decision.rationale)}</textarea>
+      <div class="t-rationale-foot"><span class="t-dim">provenance: human · Forge will not rewrite it</span><button class="t-btn t-btn-primary" data-action="record-decision">↵ record &amp; resume</button></div>
+    </div>`;
+  }
+
+  function renderADecision() {
+    const d = state.decision;
+    if (d.status === 'resolved') return renderARecorded();
+    if (d.status === 'deferred' || d.status === 'delegated' || d.status === 'rejected') return renderAParked();
+    return `<div class="t-prompt">decision ${DECISION.id}</div>
+      <div class="t-card">
+        <div class="t-card-head"><span class="t-amber">DECISION ${DECISION.id}</span><span class="t-dim">blocked ${WAIT}</span></div>
+        <h2 class="t-title">${esc(DECISION.title)}</h2>
+        <div class="t-meta"><span class="t-chip t-chip-warn">trigger: ${esc(DECISION.trigger)}</span><span class="t-chip">${esc(DECISION.policy)}</span><span class="t-chip">step ${esc(TASK.step)}</span></div>
+        ${d.evidenceReturned ? `<div class="t-feedback"><b>Forge returned with evidence</b><p>Redis is a managed service with a new failure mode; the Postgres path is one reversible migration. The recommendation did not change. The decision is still yours.</p></div>` : ''}
+        <p class="t-p">${esc(DECISION.why)}</p>
+        <p class="t-p t-dim">${esc(DECISION.context)}</p>
+        <div class="t-options">${DECISION.options.map(optionA).join('')}</div>
+        <div class="t-facts">
+          <div><span>recommendation</span><span>1 — Postgres table</span></div>
+          <div><span>reversibility</span><span>${esc(DECISION.reversibility)}</span></div>
+          <div><span>blast radius</span><span>${esc(DECISION.blast)}</span></div>
+          <div class="t-warn"><span>default</span><span>${esc(DECISION.default)}</span></div>
+        </div>
+        ${d.choice ? renderARationale() : ''}
+        ${d.error ? `<div class="t-error">! ${esc(d.error)}</div>` : ''}
+        <div class="t-actions">
+          <button class="t-btn" data-action="modal" data-modal="defer">d · defer</button>
+          <button class="t-btn" data-action="modal" data-modal="delegate">g · delegate</button>
+          <button class="t-btn t-btn-danger" data-action="modal" data-modal="reject">x · reject</button>
+        </div>
+      </div>`;
+  }
+
+  function renderARecorded() {
+    const d = state.decision;
+    const o = currentOption();
+    return `<div class="t-prompt">decision ${DECISION.id}</div>
+      <div class="t-card t-card-ok">
+        <div class="t-card-head"><span class="t-green">✓ DECISION RECORDED</span><span class="t-dim">${esc(d.recordedAt || '14:06')} · execution resumed</span></div>
+        <div class="t-record"><span>chosen</span><span>${esc(o ? o.title : '—')}</span></div>
+        <div class="t-record"><span>rationale</span><blockquote>“${esc(d.rationale)}”</blockquote></div>
+        <div class="t-record"><span>ledger</span><span>${LEDGER_PATH} <span class="t-dim">· human-authored</span></span></div>
+        <div class="t-record"><span>next</span><span class="t-dim">step 3 resumed; targeted checks, then full verification</span></div>
+        <div class="t-actions"><button class="t-btn t-btn-primary" data-action="flow" data-flow="review">review the result →</button><button class="t-btn" data-action="reopen-decision">reopen (prototype)</button></div>
+        ${d.choice !== 1 ? `<div class="t-sim">prototype: the diff renders the Postgres path; your choice (${esc(o ? o.title : '—')}) is recorded in state.</div>` : ''}
+      </div>`;
+  }
+
+  function renderAParked() {
+    const d = state.decision;
+    const copy = d.status === 'deferred'
+      ? { head: 'DECISION DEFERRED', title: 'The task is paused, not failed.', body: 'The request stays pending. There is no timeout; resume when you are ready.', label: 'when', value: d.deferWhen || 'when I say' }
+      : d.status === 'delegated'
+        ? { head: 'DELEGATED FOR ANALYSIS', title: 'Forge is investigating. The decision is still yours.', body: 'Forge will return with evidence and ask again. It will not choose for you.', label: 'scope', value: d.delegateScope || 'research the options' }
+        : { head: 'SENT BACK TO PLANNING', title: 'The decision went back to planning.', body: 'Execution is blocked until the plan is revised and approved.', label: 'reason', value: d.rejectReason || 'not needed for this task' };
+    return `<div class="t-prompt">decision ${DECISION.id}</div>
+      <div class="t-card t-card-lock">
+        <div class="t-card-head"><span class="t-amber">${copy.head}</span><span class="t-dim">gate pending</span></div>
+        <h2 class="t-title">${copy.title}</h2>
+        <p class="t-p">${copy.body}</p>
+        <div class="t-record"><span>${copy.label}</span><span>${esc(copy.value)}</span></div>
+        ${d.deferNote || d.delegateNote || d.rejectNote ? `<div class="t-record"><span>note</span><span>${esc(d.deferNote || d.delegateNote || d.rejectNote)}</span></div>` : ''}
+        <div class="t-record"><span>review</span><span class="t-dim">locked until the decision is resolved</span></div>
+        <div class="t-actions">
+          ${d.status === 'delegated' ? `<button class="t-btn t-btn-primary" data-action="forge-returns">Forge returns with evidence</button>` : ''}
+          <button class="t-btn" data-action="reopen-decision">reopen (prototype)</button>
+        </div>
+      </div>`;
+  }
+
+  function renderALocked(what) {
+    return `<div class="t-prompt">${what} ${TASK.id}</div>
+      <div class="t-card t-card-lock">
+        <div class="t-card-head"><span class="t-amber">${what.toUpperCase()} LOCKED</span><span class="t-dim">gate pending</span></div>
+        <h2 class="t-title">The ${what} is waiting on ${DECISION.id}.</h2>
+        <p class="t-p">${state.decision.status === 'pending' ? 'The task is stopped at the decision. Resolve it before reviewing the result.' : 'The task is paused. Resume it before reviewing the result.'}</p>
+        <div class="t-actions"><button class="t-btn" data-action="flow" data-flow="decision">← return to the decision</button></div>
+      </div>`;
+  }
+
+  function renderAReview() {
+    const tabs = [['diff', '1 diff'], ['map', '2 decisions'], ['assumptions', '3 assumptions'], ['checks', '4 checks']];
+    return `<div class="t-prompt">review ${TASK.id}</div>
+      <div class="t-card">
+        <div class="t-card-head"><span class="t-green">REVIEW PACKET</span><span class="t-dim">4 files · +142 −6 · verified 12:43</span></div>
+        <div class="t-dim">The agent assembled this packet. Attestation is the only path to done.</div>
+        <div class="t-tabs">${tabs.map(([key, label]) => `<button class="t-tab" data-action="review-tab" data-tab="${key}" aria-pressed="${state.reviewTab === key}">${label}</button>`).join('')}</div>
+        ${state.reviewTab === 'diff' ? renderADiff() : state.reviewTab === 'map' ? renderAMap() : state.reviewTab === 'assumptions' ? renderAAssumptions() : renderAChecks()}
+      </div>`;
+  }
+
+  function renderADiff() {
+    const warning = state.decision.choice !== 1 ? `<div class="t-feedback"><b>prototype note</b><p>The diff renders the recommended Postgres path. Your recorded choice is ${esc(currentOption() ? currentOption().title : '—')}.</p></div>` : '';
+    return `${warning}
+      <div class="t-files">${DIFF.filter(l => l.t === 'file').map(l => `<span class="t-file">${esc(l.text)}</span>`).join('')}</div>
+      <div class="t-diff">
+        ${DIFF.map(line => {
+          if (line.t === 'file') return `<div class="t-diff-file">${esc(line.text)} <span class="t-dim">${esc(line.stat || '')}</span></div>`;
+          if (line.t === 'meta') return `<div class="t-diff-meta">${esc(line.text)}</div>`;
+          if (line.t === 'hunk') return `<div class="t-diff-hunk">${esc(line.text)}</div>`;
+          return `<div class="t-diff-line ${line.t}">
+            <span class="t-ln">${line.n || ''}</span>
+            <span class="t-code">${line.t === 'add' ? '+' : line.t === 'del' ? '-' : ' '}${esc(line.text)}</span>
+            <span class="t-anns">${(line.anns || []).map(a => `<button class="t-ann" data-action="ann" data-ann="${a}" aria-label="Annotation ${a}">${a}</button>`).join('')}</span>
+          </div>`;
+        }).join('')}
+        ${state.openAnn ? renderAnnPanel(state.openAnn, 't-ann-panel') : ''}
+      </div>`;
+  }
+
+  function renderAMap() {
+    return `<div class="t-map-list">${DECISION_MAP.map(item => {
+      const status = mapStatus(item);
+      return `<div class="t-map-item ${status}">
+        <div class="t-map-head"><span class="t-map-id">${item.id}</span><span>${esc(item.title)}</span><span class="t-map-status">${esc(status)} · ${esc(item.where)}</span></div>
+        <div class="t-map-gist">${esc(mapGist(item))}</div>
+        ${item.id === 'D-3' && state.decision.status === 'resolved' ? `<blockquote class="t-map-quote">“${esc(state.decision.rationale)}”</blockquote>` : ''}
+      </div>`;
+    }).join('')}</div>`;
+  }
+
+  function renderAAssumptions() {
+    return `<div class="t-map-list">${ASSUMPTIONS.map(a => `<div class="t-map-item">
+      <div class="t-map-head"><span class="t-map-id">${a.id}</span><span>${esc(a.text)}</span><span class="t-map-status">risk ${esc(a.risk)}</span></div>
+      <div class="t-map-gist">revisit if: ${esc(a.revisit)}</div>
+    </div>`).join('')}</div>`;
+  }
+
+  function renderAChecks() {
+    return `<div class="t-check-list">${CHECKS.map(c => `<div>
+      <button class="t-check" data-action="check" data-check="${c.id}">
+        <span class="t-check-name">${esc(c.name)}</span><span class="t-check-result">✓ ${esc(c.result)}</span><span class="t-check-time">${esc(c.time)}</span>
+      </button>
+      ${state.openCheck === c.id ? `<pre class="t-pre">${esc(LOGS[c.id])}</pre>` : ''}
+    </div>`).join('')}</div>`;
+  }
+
+  function renderAnnPanel(id, cls) {
+    const ann = ANNOTATIONS[id];
+    if (!ann) return '';
+    return `<div class="${cls}">
+      <div class="${cls === 't-ann-panel' ? 't-ann-head' : cls === 'b-ann-panel' ? 'b-ann-panel-head' : 'c-ann-panel-head'}">
+        <b>${esc(ann.title)}</b>
+        <button data-action="ann" data-ann="${id}" aria-label="Close annotation">×</button>
+      </div>
+      <p>${esc(ann.text)}</p>
+    </div>`;
+  }
+
+  function renderAAttest() {
+    if (allPassed()) return renderAFinal();
+    const a = state.attestation;
+    const i = a.qIndex;
+    const q = QUESTIONS[i];
+    const grade = a.grades[i];
+    const fail = a.failures[i];
+    return `<div class="t-prompt">attest ${TASK.id}</div>
+      <div class="t-card">
+        <div class="t-card-head"><span class="t-amber">ATTESTATION ${q.n}/3</span><span class="t-dim">answers recorded verbatim</span></div>
+        <div class="t-progress">${QUESTIONS.map((qq, j) => {
+          const g = a.grades[j];
+          return `<span class="${g === 'strong' ? 'done' : j === i ? '' : 't-dim'}">${g === 'strong' ? '✓' : j === i ? '●' : '○'} Q${qq.n}</span>`;
+        }).join(' · ')}</div>
+        <h2 class="t-title">${esc(q.text)}</h2>
+        <div class="t-meta"><span class="t-chip">evidence: ${esc(q.evidence)}</span><span class="t-chip">${fail} failed ${fail === 1 ? 'attempt' : 'attempts'}</span></div>
+        <textarea class="t-answer" data-bind="answer-${i}" rows="4" aria-label="Your answer to question ${q.n}">${esc(a.answers[i])}</textarea>
+        <div class="t-sim"><span>prototype:</span>${['strong', 'vague', 'wrong'].map(k => `<button data-action="simulate-answer" data-q="${i}" data-kind="${k}">${k} answer</button>`).join('')}</div>
+        ${grade === 'strong' ? `<div class="t-feedback ok"><b>recorded</b><p>Recorded verbatim. Moving to the next question.</p></div>` : ''}
+        ${grade === 'vague' ? `<div class="t-feedback"><b>not yet</b><p>${esc(q.vagueFeedback)}</p></div>` : ''}
+        ${grade === 'wrong' ? `<div class="t-feedback bad"><b>not yet</b><p>${esc(q.wrongFeedback)}</p></div>` : ''}
+        ${a.explainOpen[i] ? `<div class="t-feedback"><b>Forge explains</b><p>${esc(q.explain)}</p></div>` : ''}
+        ${a.evidenceOpen[i] ? `<pre class="t-pre">${esc(q.evidenceText)}</pre>` : ''}
+        ${fail >= 2 ? `<div class="t-feedback bad"><b>still not attestable</b><p>Two failed attempts. Read the evidence, ask Forge to explain, or stop. Nothing merges without this.</p>
+          <div class="t-actions">
+            <button class="t-btn" data-action="evidence" data-q="${i}">show evidence</button>
+            <button class="t-btn" data-action="explain" data-q="${i}">ask Forge to explain</button>
+            <button class="t-btn t-btn-danger" data-action="stop-attest">stop — I cannot attest</button>
+          </div></div>` : ''}
+        <div class="t-actions">
+          <button class="t-btn t-btn-primary" data-action="submit-answer" data-q="${i}">↵ submit answer</button>
+          <button class="t-btn" data-action="evidence" data-q="${i}">e evidence</button>
+        </div>
+      </div>`;
+  }
+
+  function renderAFinal() {
+    const a = state.attestation;
+    return `<div class="t-prompt">attest ${TASK.id}</div>
+      <div class="t-card t-card-ok">
+        <div class="t-card-head"><span class="t-green">ALL THREE RECORDED</span><span class="t-dim">the human act</span></div>
+        <p class="t-p">Your answers are attached to the review packet. The agent cannot check this box for you.</p>
+        <div class="t-map-list">
+          ${QUESTIONS.map((q, i) => `<div class="t-map-item resolved">
+            <div class="t-map-head"><span class="t-map-id">Q${q.n}</span><span>${esc(q.text)}</span></div>
+            <blockquote class="t-map-quote">“${esc(a.answers[i])}”</blockquote>
+          </div>`).join('')}
+        </div>
+        <button class="t-checkbox" data-action="toggle-final" aria-pressed="${a.finalChecked}">${a.finalChecked ? '[x]' : '[ ]'} I attest that these are my words and I understand this change.</button>
+        <div class="t-actions"><button class="t-btn t-btn-primary" data-action="attest-final" ${a.finalChecked ? '' : 'disabled'}>record attestation · done</button><span class="t-dim">merge remains yours</span></div>
+      </div>`;
+  }
+
+  function renderAStopped() {
+    return `<div class="t-prompt">attest ${TASK.id}</div>
+      <div class="t-card t-stopped">
+        <div class="t-card-head"><span class="t-red">${TASK.id} STOPPED</span><span class="t-dim">attestation incomplete</span></div>
+        <h2 class="t-title">You could not explain the change.</h2>
+        <p class="t-p">Nothing merged. The task is stopped, not done. Read the decision record or ask for a walkthrough, then reopen the review.</p>
+        <div class="t-record"><span>branch</span><span>${esc(TASK.branch)} — unmerged</span></div>
+        <div class="t-record"><span>ledger</span><span>${DECISION.id} is recorded; attestation is not</span></div>
+        <div class="t-actions"><button class="t-btn" data-action="reopen-attest">reopen review (prototype)</button><button class="t-btn" data-action="flow" data-flow="review">back to review</button></div>
+      </div>`;
+  }
+
+  function renderADone() {
+    return `<div class="t-prompt">${TASK.id}</div>
+      <div class="t-card t-card-ok">
+        <div class="t-card-head"><span class="t-green">✓ ${TASK.id} DONE</span><span class="t-dim">attested by ${esc(TASK.owner)} · 14:12</span></div>
+        <h2 class="t-title">Every decision is explainable.</h2>
+        <div class="t-record"><span>attestation</span><span>${ATTEST_PATH} · three answers, verbatim</span></div>
+        <div class="t-record"><span>ledger</span><span>${LEDGER_PATH}</span></div>
+        <div class="t-record"><span>branch</span><span>${esc(TASK.branch)} — yours to merge</span></div>
+        <div class="t-record"><span>worktree</span><span>kept until merge; cleanup is never forced</span></div>
+        <div class="t-record"><span>merge</span><span>Forge did not merge it. Attestation is recorded; merge is still yours.</span></div>
+        <div class="t-actions"><button class="t-btn" data-action="reset">start over (prototype)</button></div>
+      </div>`;
+  }
+
+  function renderAAway() {
+    return `<div class="t-prompt">status</div>
+      <div class="t-card t-card-lock">
+        <div class="t-card-head"><span class="t-amber">WAITING FOR YOU</span><span class="t-dim">2h 14m</span></div>
+        <div class="t-record"><span>task</span><span>${TASK.id} · ${esc(TASK.title)}</span></div>
+        <div class="t-record"><span>state</span><span>decision — gate ${DECISION.id} pending</span></div>
+        <div class="t-record"><span>timeout</span><span>none; closing this terminal is safe</span></div>
+        <div class="t-record"><span>resume</span><span>forge resume ${TASK.id}</span></div>
+        <div class="t-actions"><button class="t-btn t-btn-primary" data-action="resume-away">resume where I left off</button></div>
+      </div>
+      <div class="t-prompt">resume ${TASK.id}<span class="cursor"></span></div>`;
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* B — Local web cockpit                                               */
+  /* ------------------------------------------------------------------ */
+  function renderB() {
+    if (state.done) return shellB(renderBDone());
+    if (state.away) return shellB(renderBAway());
+    if (state.flow === 'decision') return shellB(renderBDecision());
+    if (state.flow === 'review') return shellB(canReview() ? renderBReview() : renderBLocked('review'));
+    return shellB(canReview() ? (state.stopped ? renderBStopped() : renderBAttest()) : renderBLocked('attestation'));
+  }
+
+  function shellB(main) {
+    return `<section class="vB">${renderBTop()}<div class="b-shell">${renderBRail()}<main class="b-main">${main}</main></div></section>`;
+  }
+
+  function renderBTop() {
+    return `<header class="b-top">
+      <div class="b-brand">Forge <span>local</span></div>
+      <div class="b-repo">${esc(TASK.repo)} <i>/</i> ${esc(TASK.branch)}</div>
+      <div class="b-top-state"><span class="b-dot ${state.done ? 'done' : ''}"></span>${esc(taskStateLabel())}</div>
+    </header>`;
+  }
+
+  function renderBRail() {
+    const decisionDone = state.decision.status === 'resolved' || state.done;
+    const reviewClass = state.done ? 'done' : (state.flow === 'review' || state.flow === 'attest') ? (canReview() ? 'active' : 'locked') : canReview() ? '' : 'locked';
+    const reviewLabel = state.done ? 'attested' : canReview() ? (state.flow === 'attest' ? 'attestation' : 'ready') : 'locked';
+    return `<aside class="b-rail">
+      <div class="b-rail-section">
+        <div class="b-eyebrow">Task</div>
+        <div class="b-task-id">${TASK.id}</div>
+        <div class="b-task-name">${esc(TASK.title)}</div>
+        <dl class="b-meta">
+          <div><dt>branch</dt><dd>${esc(TASK.branch)}</dd></div>
+          <div><dt>base</dt><dd>${esc(TASK.base)}</dd></div>
+          <div><dt>step</dt><dd>${esc(TASK.step)}</dd></div>
+          <div><dt>risk</dt><dd>${esc(TASK.risk)}</dd></div>
+        </dl>
+      </div>
+      <div class="b-rail-section">
+        <div class="b-eyebrow">Gates</div>
+        <ol class="b-gates">
+          <li class="done"><b>Plan</b><span>approved 14:03</span></li>
+          <li class="${decisionDone ? 'done' : 'active'}"><b>Decision</b><span>${decisionDone ? 'D-3 recorded' : 'D-3 waiting'}</span></li>
+          <li class="done"><b>Permission</b><span>not needed</span></li>
+          <li class="${reviewClass}"><b>Review</b><span>${reviewLabel}</span></li>
+        </ol>
+      </div>
+      <div class="b-rail-section">
+        <div class="b-eyebrow">Decision map</div>
+        <div class="b-map">${DECISION_MAP.map(item => {
+          const status = mapStatus(item);
+          return `<div class="b-map-item ${status}">
+            <span class="id">${item.id}</span>
+            <span><span class="what">${esc(item.title)}</span><span class="st">${esc(status)} · ${esc(item.where)}</span></span>
+          </div>`;
+        }).join('')}</div>
+      </div>
+      <div class="b-rail-section">
+        <div class="b-eyebrow">Checks</div>
+        <div class="b-checks-mini">
+          <div>pnpm test <span>42 passed</span></div>
+          <div>pnpm build <span>clean</span></div>
+          <div>migrate:check <span>up/down ok</span></div>
+          <div>manual replay <span>1 charge</span></div>
+        </div>
+      </div>
+      <div class="b-log">
+        <div class="b-log-head">terminal</div>
+        <div class="b-log-line">$ forge start</div>
+        <div class="b-log-line">serving 127.0.0.1:4317</div>
+        <div class="b-log-line">gate D-3 → ${canReview() ? 'recorded' : 'waiting'}</div>
+        <div class="b-log-line b-log-dim">${state.done ? 'attested → done' : canReview() ? 'review packet ready' : 'nothing expires'}</div>
+      </div>
+    </aside>`;
+  }
+
+  function optionB(o) {
+    const sel = state.decision.choice === o.n;
+    return `<button class="b-option" data-action="choose" data-choice="${o.n}" aria-pressed="${sel}">
+      <span class="b-radio" aria-hidden="true"></span>
+      <span class="b-option-body">
+        <span class="b-option-title">${esc(o.title)}${o.recommended ? ' <em>recommended</em>' : ''}</span>
+        <span class="b-option-sub">${esc(o.sub)}</span>
+        <span class="b-option-sum">${esc(o.summary)}</span>
+        <span class="b-chips">${o.chips.map((c, i) => `<span class="b-chip ${i === 0 ? 'good' : ''}">${esc(c)}</span>`).join('')}</span>
+        ${sel ? `<span class="b-option-consequence">${esc(o.consequence)}</span>` : ''}
+      </span>
+      <span class="b-option-num">0${o.n}</span>
+    </button>`;
+  }
+
+  function renderBLedger() {
+    const o = currentOption();
+    const status = state.decision.status === 'resolved' ? 'accepted' : state.decision.status === 'pending' ? 'pending' : state.decision.status;
+    return `<aside class="b-ledger">
+      <div class="b-ledger-head"><b>Ledger preview</b><span>human</span></div>
+      <div class="b-ledger-file">${LEDGER_PATH}</div>
+      <dl>
+        <div><dt>id</dt><dd>${DECISION.id}</dd></div>
+        <div><dt>task</dt><dd>${TASK.id}</dd></div>
+        <div><dt>status</dt><dd>${status}</dd></div>
+        <div><dt>chosen</dt><dd>${esc(o ? o.title : '—')}</dd></div>
+        <div><dt>reversible</dt><dd>yes · down migration</dd></div>
+        <div><dt>blast</dt><dd>${esc(DECISION.blast)}</dd></div>
+        <div><dt>policy</dt><dd>v3 · a91f</dd></div>
+      </dl>
+      <div class="b-ledger-quote"><span>rationale (human)</span><p data-live="rationale">${esc(state.decision.rationale) || 'Your words will appear here.'}</p></div>
+      <div class="b-ledger-foot">signature · ${esc(TASK.owner)} · ${state.decision.status === 'resolved' ? esc(state.decision.recordedAt || '14:06') : 'pending'}</div>
+    </aside>`;
+  }
+
+  function renderBDecision() {
+    const d = state.decision;
+    if (d.status === 'resolved') return renderBReceipt();
+    if (d.status === 'deferred' || d.status === 'delegated' || d.status === 'rejected') return renderBParked();
+    return `<div class="b-decision-grid">
+      <div class="b-decision-main">
+        <div class="b-eyebrow">Decision ${DECISION.id} · blocked ${WAIT}</div>
+        <h1 class="b-title">${esc(DECISION.title)}</h1>
+        <p class="b-lede">${esc(DECISION.why)}</p>
+        <div class="b-meta-row"><span class="b-tag warn">policy trigger · ${esc(DECISION.trigger)}</span><span class="b-tag">${esc(DECISION.policy)}</span><span class="b-tag">step ${esc(TASK.step)}</span></div>
+        ${d.evidenceReturned ? `<div class="b-parked-note"><strong>Forge returned with evidence</strong>Redis is a managed service with a new failure mode; the Postgres path is one reversible migration. The recommendation did not change. The decision is still yours.</div>` : ''}
+        <div class="b-section"><h2 class="b-h2">Context</h2><p>${esc(DECISION.context)}</p></div>
+        <div class="b-section"><h2 class="b-h2">Options</h2><p class="b-help" style="margin-bottom:8px">Choose one; the rationale is the next step.</p><div class="b-options">${DECISION.options.map(optionB).join('')}</div></div>
+        <div class="b-rec"><div class="b-eyebrow">Forge recommends</div><p><strong>1 · Postgres table.</strong> The only option that is durable, shared, and already in the stack.</p></div>
+        <dl class="b-facts">
+          <div><dt>reversibility</dt><dd>${esc(DECISION.reversibility)}</dd></div>
+          <div><dt>blast radius</dt><dd>${esc(DECISION.blast)}</dd></div>
+          <div><dt>default</dt><dd class="warn">${esc(DECISION.default)}</dd></div>
+        </dl>
+        <div class="b-rationale">
+          <label for="rationale-b">Your rationale <span>required · written verbatim</span></label>
+          <textarea id="rationale-b" data-bind="rationale" rows="5">${esc(d.rationale)}</textarea>
+          <p class="b-help">This is the human-authored part of the record. Forge will not rewrite it. <span data-live="words">${words(d.rationale)}</span> words.</p>
+        </div>
+        ${d.error ? `<div class="b-error">${esc(d.error)}</div>` : ''}
+        <div class="b-actionbar">
+          <button class="b-btn primary" data-action="record-decision" ${d.choice ? '' : 'disabled'}>Record decision &amp; resume</button>
+          <button class="b-btn" data-action="modal" data-modal="defer">Defer</button>
+          <button class="b-btn" data-action="modal" data-modal="delegate">Delegate</button>
+          <button class="b-btn ghost" data-action="modal" data-modal="reject">Reject</button>
+          <div class="b-default">${esc(DECISION.default)}</div>
+        </div>
+      </div>
+      ${renderBLedger()}
+    </div>`;
+  }
+
+  function renderBReceipt() {
+    const d = state.decision;
+    const o = currentOption();
+    return `<div class="b-receipt">
+      <div class="b-eyebrow">Decision recorded · ${esc(d.recordedAt || '14:06')}</div>
+      <h1 class="b-title">D-3 is in the ledger.</h1>
+      <p class="b-lede">Forge resumed step 3. Execution and verification are simulated in this prototype; the review packet is ready.</p>
+      <div class="b-receipt-grid">
+        <div><dt>chosen</dt><dd>${esc(o ? o.title : '—')}</dd></div>
+        <div><dt>your rationale</dt><dd><blockquote>“${esc(d.rationale)}”</blockquote></dd></div>
+        <div><dt>record</dt><dd>${LEDGER_PATH} · human-authored, pinned to policy v3#a91f</dd></div>
+        <div><dt>next</dt><dd>Targeted checks passed; full verification is next, then review.</dd></div>
+      </div>
+      <div class="b-receipt-actions">
+        <button class="b-btn primary" data-action="flow" data-flow="review">Review the result →</button>
+        <button class="b-btn ghost" data-action="reopen-decision">Reopen (prototype)</button>
+      </div>
+      ${d.choice !== 1 ? `<div class="b-parked-note"><strong>Prototype note</strong>The diff renders the Postgres path. Your recorded choice is ${esc(o ? o.title : '—')}.</div>` : ''}
+    </div>`;
+  }
+
+  function renderBParked() {
+    const d = state.decision;
+    const copy = d.status === 'deferred'
+      ? { eyebrow: 'D-3 deferred', title: 'Paused, not failed.', body: 'The request stays pending. There is no timeout; resume when you are ready.', label: 'When', value: d.deferWhen || 'when I say' }
+      : d.status === 'delegated'
+        ? { eyebrow: 'D-3 delegated for analysis', title: 'The decision is still yours.', body: 'Forge is investigating the options. It will return with evidence and ask again; it will not choose for you.', label: 'Scope', value: d.delegateScope || 'research the options' }
+        : { eyebrow: 'D-3 sent back', title: 'Back to planning.', body: 'Execution is blocked until the plan is revised and approved.', label: 'Reason', value: d.rejectReason || 'not needed for this task' };
+    return `<div class="b-parked">
+      <div class="b-eyebrow">${copy.eyebrow}</div>
+      <h1 class="b-title">${copy.title}</h1>
+      <p class="b-lede">${copy.body}</p>
+      <div class="b-parked-note"><strong>${copy.label}</strong>${esc(copy.value)}${d.deferNote || d.delegateNote || d.rejectNote ? `<br><br>${esc(d.deferNote || d.delegateNote || d.rejectNote)}` : ''}</div>
+      <div class="b-receipt-grid">
+        <div><dt>review</dt><dd>Locked until the decision is resolved.</dd></div>
+        <div><dt>state</dt><dd>${esc(taskStateLabel())}</dd></div>
+        <div><dt>timeout</dt><dd>None. The gate persists indefinitely.</dd></div>
+      </div>
+      <div class="b-receipt-actions">
+        ${d.status === 'delegated' ? `<button class="b-btn primary" data-action="forge-returns">Forge returns with evidence</button>` : ''}
+        <button class="b-btn ghost" data-action="reopen-decision">Reopen (prototype)</button>
+      </div>
+    </div>`;
+  }
+
+  function renderBLocked(what) {
+    return `<div class="b-parked">
+      <div class="b-eyebrow">${what} locked</div>
+      <h1 class="b-title">The review is waiting on D-3.</h1>
+      <p class="b-lede">${state.decision.status === 'pending' ? 'The task is stopped at the decision. Resolve it before reviewing the result.' : 'The task is paused. Resume it before reviewing the result.'}</p>
+      <div class="b-parked-note"><strong>Gate</strong>${DECISION.id} · ${esc(decisionStatusLabel())}</div>
+      <div class="b-receipt-actions"><button class="b-btn primary" data-action="flow" data-flow="decision">Return to the decision</button></div>
+    </div>`;
+  }
+
+  function renderBReview() {
+    return `<div class="b-review-head">
+      <div class="b-eyebrow">Review packet · ${TASK.id}</div>
+      <h1 class="b-title">Review the change.</h1>
+      <p class="b-lede">4 files · +142 −6 · verified 12:43 · branch ${esc(TASK.branch)}</p>
+    </div>
+    <div class="b-review-grid">
+      <div class="b-diff-col">${renderBDiff()}</div>
+      <aside class="b-packet">${renderBPacket()}</aside>
+    </div>`;
+  }
+
+  function renderBDiff() {
+    const warning = state.decision.choice !== 1 ? `<div class="b-error">Prototype note: the diff renders the recommended Postgres path. Your recorded choice is ${esc(currentOption() ? currentOption().title : '—')}.</div>` : '';
+    return `<div class="b-diff">
+      <div class="b-diff-head"><span>4 files changed</span><span>+142 −6</span></div>
+      ${DIFF.map(line => {
+        if (line.t === 'file') return `<div class="b-diff-file"><span>${esc(line.text)}</span><span class="stat">${esc(line.stat || '')}</span></div>`;
+        if (line.t === 'meta') return `<div class="b-diff-meta">${esc(line.text)}</div>`;
+        if (line.t === 'hunk') return `<div class="b-diff-hunk">${esc(line.text)}</div>`;
+        return `<div class="b-diff-line ${line.t}">
+          <span class="ln">${line.n || ''}</span>
+          <span class="code">${line.t === 'add' ? '+' : line.t === 'del' ? '-' : ' '}${esc(line.text)}</span>
+          <span class="b-anns">${(line.anns || []).map(a => `<button class="b-ann" data-action="ann" data-ann="${a}" aria-label="Annotation ${a}">${a}</button>`).join('')}</span>
+        </div>`;
+      }).join('')}
+      ${state.openAnn ? renderAnnPanel(state.openAnn, 'b-ann-panel') : ''}
+    </div>
+    ${warning}`;
+  }
+
+  function renderBPacket() {
+    const tabs = [['decisions', 'Decisions'], ['assumptions', 'Assumptions'], ['checks', 'Checks']];
+    let body = '';
+    if (state.railTab === 'decisions') {
+      body = DECISION_MAP.map(item => {
+        const status = mapStatus(item);
+        return `<div class="b-packet-item ${status === 'pending' ? 'pending' : ''}">
+          <div class="id">${item.id}</div>
+          <div class="what">${esc(item.title)}</div>
+          <div class="st">${esc(status)} · ${esc(item.where)}</div>
+          ${item.id === 'D-3' && state.decision.status === 'resolved' ? `<blockquote class="b-packet-quote">“${esc(state.decision.rationale)}”</blockquote>` : ''}
+        </div>`;
+      }).join('');
+    } else if (state.railTab === 'assumptions') {
+      body = ASSUMPTIONS.map(a => `<div class="b-packet-item">
+        <div class="id">${a.id} · risk ${esc(a.risk)}</div>
+        <div class="what">${esc(a.text)}</div>
+        <div class="st">revisit if: ${esc(a.revisit)}</div>
+      </div>`).join('');
+    } else {
+      body = CHECKS.map(c => `<div class="b-packet-check">
+        <span>${esc(c.name)} <span>${esc(c.result)}</span></span>
+        <button data-action="check" data-check="${c.id}">${state.openCheck === c.id ? 'hide log' : 'view log'}</button>
+      </div>${state.openCheck === c.id ? `<pre class="b-packet-log">${esc(LOGS[c.id])}</pre>` : ''}`).join('');
+    }
+    return `<div class="b-packet-tabs">${tabs.map(([key, label]) => `<button data-action="rail-tab" data-tab="${key}" aria-pressed="${state.railTab === key}">${label}</button>`).join('')}</div>
+      ${state.openAnn ? renderAnnPanel(state.openAnn, 'b-ann-panel') : ''}
+      <div class="b-packet-body">${body}</div>
+      <div class="b-attest-cta">
+        <div class="b-eyebrow">The human act</div>
+        <p>Three questions before this can be done. Your answers are recorded verbatim.</p>
+        <button class="b-btn" data-action="flow" data-flow="attest">Begin attestation →</button>
+      </div>`;
+  }
+
+  function renderBQuestion(q, i) {
+    const a = state.attestation;
+    const grade = a.grades[i];
+    const fail = a.failures[i];
+    return `<section class="b-q">
+      <div class="b-q-head">
+        <div class="b-q-num">0${q.n}</div>
+        <div><h2>${esc(q.text)}</h2><div class="evidence">Evidence: ${esc(q.evidence)}</div></div>
+      </div>
+      <textarea data-bind="answer-${i}" rows="3" aria-label="Your answer to question ${q.n}">${esc(a.answers[i])}</textarea>
+      <div class="b-q-actions">
+        <button class="b-btn small" data-action="submit-answer" data-q="${i}">Record answer</button>
+        <span class="b-q-sim">prototype:${['strong', 'vague', 'wrong'].map(k => `<button data-action="simulate-answer" data-q="${i}" data-kind="${k}">${k}</button>`).join('')}</span>
+        <span class="b-q-sim">${fail} failed ${fail === 1 ? 'attempt' : 'attempts'}</span>
+      </div>
+      ${grade === 'strong' ? `<div class="b-feedback ok"><b>recorded</b><p>Recorded verbatim.</p></div>` : ''}
+      ${grade === 'vague' ? `<div class="b-feedback"><b>not yet</b><p>${esc(q.vagueFeedback)}</p></div>` : ''}
+      ${grade === 'wrong' ? `<div class="b-feedback bad"><b>not yet</b><p>${esc(q.wrongFeedback)}</p></div>` : ''}
+      ${a.explainOpen[i] ? `<div class="b-feedback"><b>Forge explains</b><p>${esc(q.explain)}</p></div>` : ''}
+      ${a.evidenceOpen[i] ? `<pre class="b-packet-log">${esc(q.evidenceText)}</pre>` : ''}
+      ${fail >= 2 ? `<div class="b-escalate">
+        <button class="b-btn small" data-action="evidence" data-q="${i}">Show evidence</button>
+        <button class="b-btn small" data-action="explain" data-q="${i}">Ask Forge to explain</button>
+        <button class="b-btn small" data-action="stop-attest">Stop — I cannot attest</button>
+      </div>` : ''}
+    </section>`;
+  }
+
+  function renderBAttest() {
+    if (allPassed()) return renderBFinal();
+    const a = state.attestation;
+    return `<div class="b-viva">
+      <div class="b-eyebrow">Attestation · ${TASK.id}</div>
+      <h1 class="b-title">Explain it back.</h1>
+      <p class="b-lede">Three questions. Your answers are recorded verbatim; Forge cannot answer them for you.</p>
+      <div class="b-progress">${QUESTIONS.map((_, i) => `<div class="${a.grades[i] === 'strong' ? 'pass' : a.grades[i] ? 'fail' : ''}"></div>`).join('')}</div>
+      ${QUESTIONS.map((q, i) => renderBQuestion(q, i)).join('')}
+      <div class="b-attest-locked">Answer all three to unlock attestation. A wrong or incomplete answer stays open; it never auto-passes.</div>
+    </div>`;
+  }
+
+  function renderBFinal() {
+    const a = state.attestation;
+    return `<div class="b-viva">
+      <div class="b-eyebrow">Attestation · ${TASK.id}</div>
+      <h1 class="b-title">The human act.</h1>
+      <p class="b-lede">All three answers are recorded. Read them once more, then attest.</p>
+      <div class="b-progress">${QUESTIONS.map(() => '<div class="pass"></div>').join('')}</div>
+      ${QUESTIONS.map((q, i) => `<div class="b-q"><div class="b-q-head"><div class="b-q-num">0${q.n}</div><div><h2>${esc(q.text)}</h2><div class="evidence">${esc(a.answers[i])}</div></div></div></div>`).join('')}
+      <div class="b-attest-final">
+        <div class="b-eyebrow">The human act</div>
+        <h2>I attest that these are my words and I understand this change.</h2>
+        <button class="b-check" data-action="toggle-final" aria-pressed="${a.finalChecked}"><span class="box">${a.finalChecked ? '✓' : ''}</span><span>I understand the decision, the diff, and the verification evidence. This is my attestation, not the agent’s.</span></button>
+        <button class="b-btn primary" data-action="attest-final" ${a.finalChecked ? '' : 'disabled'} style="margin-top:10px">Record attestation · done</button>
+        <p>The agent cannot check this box for you. A wrong or incomplete answer never silently passes.</p>
+      </div>
+    </div>`;
+  }
+
+  function renderBStopped() {
+    return `<div class="b-viva">
+      <div class="b-eyebrow">Attestation · ${TASK.id}</div>
+      <h1 class="b-title">Stopped, not done.</h1>
+      <p class="b-lede">You could not explain the change after two attempts. Nothing merged. Read the decision record or ask for a walkthrough, then reopen review.</p>
+      <div class="b-parked-note"><strong>Branch</strong>${esc(TASK.branch)} is unmerged. ${DECISION.id} is recorded; attestation is not.</div>
+      <div class="b-receipt-actions">
+        <button class="b-btn primary" data-action="reopen-attest">Reopen review (prototype)</button>
+        <button class="b-btn" data-action="flow" data-flow="review">Back to review</button>
+      </div>
+    </div>`;
+  }
+
+  function renderBDone() {
+    return `<div class="b-done">
+      <div class="b-done-mark">✓</div>
+      <div class="b-eyebrow">${TASK.id} · done · attested by ${esc(TASK.owner)} at 14:12</div>
+      <h1 class="b-title">Every decision is explainable.</h1>
+      <p class="b-lede">The ledger holds the decisions and your words. The branch is yours to merge; Forge did not merge it.</p>
+      <div class="b-receipt-grid">
+        <div><dt>attestation</dt><dd>${ATTEST_PATH} · three answers, verbatim</dd></div>
+        <div><dt>ledger</dt><dd>${LEDGER_PATH}</dd></div>
+        <div><dt>branch</dt><dd>${esc(TASK.branch)} — unmerged</dd></div>
+        <div><dt>worktree</dt><dd>Kept until merge; cleanup is never forced.</dd></div>
+        <div><dt>merge</dt><dd>Attestation is recorded. The merge is still a human act.</dd></div>
+      </div>
+      <div class="b-receipt-actions"><button class="b-btn" data-action="reset">Start over (prototype)</button></div>
+    </div>`;
+  }
+
+  function renderBAway() {
+    return `<div class="b-wait">
+      <div>
+        <div class="b-eyebrow">Waiting · 2h 14m</div>
+        <h1 class="b-wait-title">Nothing expired.</h1>
+        <p class="b-lede">You closed the laptop at 14:06. The task is paused at decision D-3, not failed and not approved.</p>
+        <div class="b-wait-table">
+          <div><dt>task</dt><dd>${TASK.id} · ${esc(TASK.title)}</dd></div>
+          <div><dt>state</dt><dd>decision — gate ${DECISION.id} pending</dd></div>
+          <div><dt>timeout</dt><dd>None. The gate persists indefinitely.</dd></div>
+          <div><dt>resume</dt><dd><code>forge resume ${TASK.id}</code> prints a fresh local URL.</dd></div>
+        </div>
+        <button class="b-btn primary" data-action="resume-away">Resume where I left off →</button>
+      </div>
+      <div class="b-wait-term">
+        <div class="head">terminal</div>
+        <pre>$ forge status
+task     ${TASK.id} · ${esc(TASK.title)}
+state    decision · gate D-3 pending
+waiting  2h 14m
+timeout  none
+resume   forge resume ${TASK.id}
+
+<span class="amber">the browser can close. state is on disk.</span></pre>
+      </div>
+    </div>`;
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* C — Hybrid by gate                                                  */
+  /* ------------------------------------------------------------------ */
+  function shellC(consoleBody, stageBody) {
+    return `<section class="vC">
+      <aside class="c-console">
+        <div class="c-console-head"><span class="c-word">forge</span><span class="c-task">${TASK.id}</span><span class="c-live">${state.done ? 'done' : state.away ? 'waiting' : 'live'}</span></div>
+        <div class="c-console-body">${renderCLog()}${consoleBody}<div class="c-prompt"><span class="cursor"></span></div></div>
+        <div class="c-console-foot">${renderCFoot()}</div>
+      </aside>
+      <main class="c-stage">
+        <header class="c-stage-head">${renderCMap()}<div class="c-stage-meta"><span class="repo">${esc(TASK.repo)}</span><span>${esc(TASK.branch)}</span><span>${esc(TASK.base)}</span><span class="state">${esc(taskStateLabel())}</span></div></header>
+        <div class="c-stage-body">${stageBody}</div>
+      </main>
+    </section>`;
+  }
+
+  function renderCLog() {
+    let lines = [
+      `<div><span class="ts">14:02</span>task started · base ${TASK.base}</div>`,
+      `<div><span class="ts">14:03</span>plan v2 approved · full risk</div>`,
+      `<div><span class="ts">14:06</span><b>gate D-3 · decision</b></div>`
+    ];
+    if (state.decision.status === 'resolved') lines.push(`<div><span class="ts">14:06</span>D-3 recorded → step 3 resumed</div>`);
+    if (state.flow === 'review' && canReview()) lines.push(`<div><span class="ts">14:41</span>review packet ready · 4 files</div>`);
+    if (state.flow === 'attest' && canReview()) lines.push(`<div><span class="ts">14:42</span>attestation open</div>`);
+    if (state.done) lines.push(`<div><span class="ts">14:44</span><b>attested → done</b></div>`);
+    if (state.away) lines.push(`<div><span class="ts">now</span>waiting for human · 2h 14m</div>`);
+    return `<div class="c-log">${lines.join('')}</div>`;
+  }
+
+  function renderCFoot() {
+    if (state.done) return `<span>done · branch unmerged</span><span>merge is yours</span>`;
+    if (state.away) return `<span>waiting · no timeout</span><span>forge resume ${TASK.id}</span>`;
+    if (state.flow === 'decision' && state.decision.status === 'pending') return `<span>1 2 3 choose · d/g/x · ↵ record</span><span>T = terminal</span>`;
+    if (state.flow === 'review') return `<span>a attest · tabs in room</span><span>W = local web</span>`;
+    return `<span>answers are typed in the room</span><span>W = local web</span>`;
+  }
+
+  function renderCMap() {
+    const gates = [
+      ['Plan', 'W', 'done'],
+      ['Decision', 'T', state.decision.status === 'resolved' || state.done ? 'done' : 'pending'],
+      ['Permission', 'T', 'todo'],
+      ['Review', 'W', state.done || state.flow === 'attest' ? 'done' : canReview() ? 'todo' : 'todo'],
+      ['Attest', 'W', state.done ? 'done' : 'todo']
+    ];
+    const active = state.done ? null : state.flow === 'decision' ? 'Decision' : state.flow === 'review' ? 'Review' : 'Attest';
+    return `<div class="c-map">
+      ${gates.map(([name, surface, status]) => `<span class="c-gate ${status === 'done' ? 'done' : ''} ${active === name ? 'active' : ''}"><b>${name}</b><i>${surface}</i></span>`).join('')}
+      <span class="c-legend">T terminal · W local web</span>
+    </div>`;
+  }
+
+  function optionC(o) {
+    const sel = state.decision.choice === o.n;
+    return `<button class="c-opt" data-action="choose" data-choice="${o.n}" aria-pressed="${sel}">
+      <span class="k">[${o.n}]</span>
+      <span class="o"><span>${esc(o.title)}${o.recommended ? ' · rec' : ''}</span><small>${esc(o.summary)}</small></span>
+    </button>`;
+  }
+
+  function renderCLedger() {
+    const o = currentOption();
+    const status = state.decision.status === 'resolved' ? 'accepted' : state.decision.status === 'pending' ? 'pending' : state.decision.status;
+    return `<div class="c-ledger">
+      <div class="c-ledger-head"><b>Ledger preview</b><span>human</span></div>
+      <dl>
+        <div><dt>id</dt><dd>${DECISION.id}</dd></div>
+        <div><dt>task</dt><dd>${TASK.id}</dd></div>
+        <div><dt>status</dt><dd>${status}</dd></div>
+        <div><dt>chosen</dt><dd>${esc(o ? o.title : '—')}</dd></div>
+        <div><dt>blast</dt><dd>${esc(DECISION.blast)}</dd></div>
+        <div><dt>policy</dt><dd>v3 · a91f</dd></div>
+      </dl>
+      <div class="c-ledger-quote"><span data-live="rationale">${esc(state.decision.rationale) || 'Your words will appear here.'}</span></div>
+    </div>`;
+  }
+
+  function renderCConsoleDecision() {
+    const d = state.decision;
+    if (d.status === 'resolved') {
+      const o = currentOption();
+      return `<div class="c-receipt"><b>✓ D-3 recorded</b><br>${esc(o ? o.title : '—')} · ${esc(d.recordedAt || '14:06')}<br>step 3 resumed; review is in the room →</div>
+        <div class="c-actions"><button class="c-btn" data-action="reopen-decision">reopen</button><button class="c-btn c-btn-primary" data-action="flow" data-flow="review">review →</button></div>`;
+    }
+    if (d.status === 'deferred' || d.status === 'delegated' || d.status === 'rejected') {
+      const label = d.status === 'deferred' ? 'paused · deferred' : d.status === 'delegated' ? 'paused · Forge investigating' : 'planning · sent back';
+      return `<div class="c-receipt"><b>${label}</b><br>${d.status === 'delegated' ? 'Forge returns with evidence; the decision stays yours.' : 'Review is locked until the decision is resolved.'}</div>
+        <div class="c-actions">${d.status === 'delegated' ? `<button class="c-btn c-btn-primary" data-action="forge-returns">Forge returns</button>` : ''}<button class="c-btn" data-action="reopen-decision">reopen</button></div>`;
+    }
+    return `<div class="c-card">
+      <div class="c-card-head"><span class="c-amber">D-3 · DECISION</span><span class="c-dim">schema/data migration</span></div>
+      <div class="c-q">${esc(DECISION.title)}</div>
+      <div class="c-why">${esc(DECISION.why)}</div>
+      ${d.evidenceReturned ? `<div class="c-receipt"><b>evidence returned</b><br>Redis adds a service and failure mode; Postgres is one reversible migration.</div>` : ''}
+      <div class="c-opts">${DECISION.options.map(optionC).join('')}</div>
+      <div class="c-facts">
+        <div><span>recommend</span><span>1 · Postgres table</span></div>
+        <div><span>reversible</span><span>down migration</span></div>
+        <div><span>blast</span><span>${esc(DECISION.blast)}</span></div>
+        <div><span class="warn">default</span><span class="warn">none</span></div>
+      </div>
+      ${d.choice ? `<textarea class="c-textarea" data-bind="rationale" rows="3" aria-label="Your rationale">${esc(d.rationale)}</textarea>` : `<div class="c-dim" style="margin-top:6px">choose 1–3 in the terminal</div>`}
+      <div class="c-actions">
+        ${d.choice ? `<button class="c-btn c-btn-primary" data-action="record-decision">↵ record &amp; resume</button>` : ''}
+        <button class="c-btn" data-action="modal" data-modal="defer" aria-label="Defer decision">d</button>
+        <button class="c-btn" data-action="modal" data-modal="delegate" aria-label="Delegate the analysis">g</button>
+        <button class="c-btn" data-action="modal" data-modal="reject" aria-label="Reject decision">x</button>
+      </div>
+      ${d.error ? `<div class="c-feedback bad" style="margin-top:7px"><p>${esc(d.error)}</p></div>` : ''}
+    </div>`;
+  }
+
+  function renderCStageDecision() {
+    const d = state.decision;
+    if (d.status === 'resolved') {
+      const o = currentOption();
+      return `<div class="c-decision">
+        <div class="c-eyebrow">Decision recorded · ${esc(d.recordedAt || '14:06')}</div>
+        <h1 class="c-title">D-3 is in the ledger.</h1>
+        <p class="c-lede">Forge resumed step 3. Execution and verification are simulated; the review is ready in this room.</p>
+        <div class="c-ledger">
+          <div class="c-ledger-head"><b>Record</b><span>human-authored</span></div>
+          <dl><div><dt>chosen</dt><dd>${esc(o ? o.title : '—')}</dd></div><div><dt>rationale</dt><dd>“${esc(d.rationale)}”</dd></div><div><dt>ledger</dt><dd>${LEDGER_PATH}</dd></div></dl>
+        </div>
+        <div class="c-actions" style="margin-top:16px"><button class="c-btn c-btn-primary" data-action="flow" data-flow="review">Review the result →</button><button class="c-btn" data-action="reopen-decision">Reopen (prototype)</button></div>
+      </div>`;
+    }
+    if (d.status === 'deferred' || d.status === 'delegated' || d.status === 'rejected') {
+      const copy = d.status === 'deferred'
+        ? { eyebrow: 'D-3 deferred', title: 'Paused, not failed.', body: 'The request stays pending. No timeout; resume when you are ready.' }
+        : d.status === 'delegated'
+          ? { eyebrow: 'D-3 delegated', title: 'The decision is still yours.', body: 'Forge is investigating. It returns with evidence and asks again.' }
+          : { eyebrow: 'D-3 sent back', title: 'Back to planning.', body: 'Execution is blocked until the plan is revised and approved.' };
+      return `<div class="c-decision">
+        <div class="c-eyebrow">${copy.eyebrow}</div>
+        <h1 class="c-title">${copy.title}</h1>
+        <p class="c-lede">${copy.body}</p>
+        <div class="c-answer-note"><span class="c-key">T</span><span>This gate lives in the terminal. The room shows the brief; the decision is recorded there.</span></div>
+        <div class="c-actions">${d.status === 'delegated' ? `<button class="c-btn c-btn-primary" data-action="forge-returns">Forge returns with evidence</button>` : ''}<button class="c-btn" data-action="reopen-decision">Reopen (prototype)</button></div>
+      </div>`;
+    }
+    return `<div class="c-decision">
+      <div class="c-eyebrow">Decision brief · answered in the terminal</div>
+      <h1 class="c-title">${esc(DECISION.title)}</h1>
+      <p class="c-lede">${esc(DECISION.why)}</p>
+      <div class="c-answer-note"><span class="c-key">T</span><span>This gate is answered in the terminal. The room holds the context, not a second form.</span></div>
+      <div class="c-brief-grid">
+        <div><h2>Why now</h2><p>${esc(DECISION.context)}</p></div>
+        <div><h2>Blast radius</h2><p>${esc(DECISION.blast)}. Reversible with a down migration; only replay keys are lost.</p></div>
+      </div>
+      <h2 class="c-h2">Options at a glance</h2>
+      <table class="c-table">
+        <thead><tr><th>Option</th><th>Properties</th><th>Cost</th></tr></thead>
+        <tbody>
+          <tr class="rec"><td><strong>1 · Postgres table</strong><br><span class="tag">recommended</span></td><td>Durable · shared · survives restarts</td><td>+1 migration · nightly expiry</td></tr>
+          <tr><td><strong>2 · In-memory LRU</strong></td><td>Fast · per-instance · lost on restart</td><td>No migration</td></tr>
+          <tr><td><strong>3 · Redis SETNX</strong></td><td>Durable · shared · new service</td><td>Ops surface · TTL policy</td></tr>
+        </tbody>
+      </table>
+      <div class="c-facts" style="margin-bottom:14px"><div><span>default</span><span class="warn">${esc(DECISION.default)}</span></div><div><span>policy</span><span>${esc(DECISION.policy)}</span></div></div>
+      ${renderCLedger()}
+    </div>`;
+  }
+
+  function renderCConsoleReview() {
+    return `<div class="c-receipt"><b>✓ review packet ready</b><br>4 files · +142 −6 · verified 12:43<br>the room holds the diff and the packet</div>
+      <div class="c-facts">
+        <div><span>diff</span><span>annotated with D-1, D-2, D-3</span></div>
+        <div><span>packet</span><span>decisions · assumptions · checks</span></div>
+        <div><span>next</span><span>attest in the room</span></div>
+      </div>
+      <div class="c-actions"><button class="c-btn c-btn-primary" data-action="flow" data-flow="attest">open attestation →</button></div>`;
+  }
+
+  function renderCStageReview() {
+    const tabs = [['diff', 'Diff'], ['decisions', 'Decisions'], ['assumptions', 'Assumptions'], ['checks', 'Checks']];
+    let content = '';
+    if (state.reviewTab === 'diff') content = renderCDiff();
+    else if (state.reviewTab === 'decisions') content = renderCDecisions();
+    else if (state.reviewTab === 'assumptions') content = renderCAssumptions();
+    else content = renderCChecks();
+    return `<div class="c-review">
+      <div class="c-eyebrow">Review packet · ${TASK.id}</div>
+      <h1 class="c-title">Review the change.</h1>
+      <p class="c-lede">4 files · +142 −6 · verified 12:43 · branch ${esc(TASK.branch)}</p>
+      <div class="c-tabs">${tabs.map(([key, label]) => `<button class="c-tab" data-action="review-tab" data-tab="${key}" aria-pressed="${state.reviewTab === key}">${label}</button>`).join('')}</div>
+      ${content}
+      <div class="c-attest-cta">
+        <div><div class="c-eyebrow">The human act</div><p>Three questions before this can be done. Your answers are recorded verbatim.</p></div>
+        <button class="c-btn c-btn-primary" data-action="flow" data-flow="attest">Begin attestation →</button>
+      </div>
+    </div>`;
+  }
+
+  function renderCDiff() {
+    const warning = state.decision.choice !== 1 ? `<div class="c-feedback bad"><b>prototype note</b><p>The diff renders the recommended Postgres path. Your recorded choice is ${esc(currentOption() ? currentOption().title : '—')}.</p></div>` : '';
+    return `${warning}<div class="c-diff">
+      ${DIFF.map(line => {
+        if (line.t === 'file') return `<div class="c-diff-file">${esc(line.text)} <span class="c-dim">${esc(line.stat || '')}</span></div>`;
+        if (line.t === 'meta') return `<div class="c-diff-meta">${esc(line.text)}</div>`;
+        if (line.t === 'hunk') return `<div class="c-diff-hunk">${esc(line.text)}</div>`;
+        return `<div class="c-diff-line ${line.t}">
+          <span class="ln">${line.n || ''}</span>
+          <span class="code">${line.t === 'add' ? '+' : line.t === 'del' ? '-' : ' '}${esc(line.text)}</span>
+          <span class="c-anns">${(line.anns || []).map(a => `<button class="c-ann" data-action="ann" data-ann="${a}" aria-label="Annotation ${a}">${a}</button>`).join('')}</span>
+        </div>`;
+      }).join('')}
+      ${state.openAnn ? renderAnnPanel(state.openAnn, 'c-ann-panel') : ''}
+    </div>`;
+  }
+
+  function renderCDecisions() {
+    return DECISION_MAP.map(item => {
+      const status = mapStatus(item);
+      return `<div class="c-packet-item ${status === 'pending' ? 'pending' : ''}">
+        <div class="id">${item.id}</div><div class="what">${esc(item.title)}</div><div class="st">${esc(status)} · ${esc(item.where)}</div>
+        ${item.id === 'D-3' && state.decision.status === 'resolved' ? `<blockquote class="c-packet-quote">“${esc(state.decision.rationale)}”</blockquote>` : ''}
+      </div>`;
+    }).join('');
+  }
+
+  function renderCAssumptions() {
+    return ASSUMPTIONS.map(a => `<div class="c-packet-item"><div class="id">${a.id} · risk ${esc(a.risk)}</div><div class="what">${esc(a.text)}</div><div class="st">revisit if: ${esc(a.revisit)}</div></div>`).join('');
+  }
+
+  function renderCChecks() {
+    return CHECKS.map(c => `<div class="c-packet-check"><span>${esc(c.name)} <span>${esc(c.result)}</span></span><button data-action="check" data-check="${c.id}">${state.openCheck === c.id ? 'hide log' : 'view log'}</button></div>${state.openCheck === c.id ? `<pre class="c-packet-log">${esc(LOGS[c.id])}</pre>` : ''}`).join('');
+  }
+
+  function renderCConsoleAttest() {
+    const a = state.attestation;
+    const i = a.qIndex;
+    return `<div class="c-receipt"><b>attestation · ${allPassed() ? 'all three recorded' : 'in the room'}</b><br>${QUESTIONS.map((_, j) => 'Q' + (j + 1) + ' ' + (a.grades[j] === 'strong' ? '✓' : j === i ? '●' : '○')).join(' · ')}</div>
+      <div class="c-facts"><div><span>answers</span><span>typed in the room →</span></div><div><span>recorded</span><span>verbatim · human</span></div><div><span>merge</span><span>yours after attest</span></div></div>
+      ${allPassed() ? '' : `<div class="c-actions"><button class="c-btn c-btn-primary" data-action="focus-room">focus the room →</button></div>`}`;
+  }
+
+  function renderCQuestion(q, i) {
+    const a = state.attestation;
+    const grade = a.grades[i];
+    const fail = a.failures[i];
+    return `<section class="c-q">
+      <div class="c-q-head"><div class="c-q-num">0${q.n}</div><div><h2>${esc(q.text)}</h2><div class="evidence">Evidence: ${esc(q.evidence)} · ${fail} failed ${fail === 1 ? 'attempt' : 'attempts'}</div></div></div>
+      <textarea data-bind="answer-${i}" rows="3" aria-label="Your answer to question ${q.n}">${esc(a.answers[i])}</textarea>
+      <div class="c-q-actions">
+        <button class="c-btn c-btn-primary" data-action="submit-answer" data-q="${i}">Record answer</button>
+        <span class="c-q-sim">prototype:${['strong', 'vague', 'wrong'].map(k => `<button data-action="simulate-answer" data-q="${i}" data-kind="${k}">${k}</button>`).join('')}</span>
+      </div>
+      ${grade === 'strong' ? `<div class="c-feedback ok"><b>recorded</b><p>Recorded verbatim.</p></div>` : ''}
+      ${grade === 'vague' ? `<div class="c-feedback"><b>not yet</b><p>${esc(q.vagueFeedback)}</p></div>` : ''}
+      ${grade === 'wrong' ? `<div class="c-feedback bad"><b>not yet</b><p>${esc(q.wrongFeedback)}</p></div>` : ''}
+      ${a.explainOpen[i] ? `<div class="c-feedback"><b>Forge explains</b><p>${esc(q.explain)}</p></div>` : ''}
+      ${a.evidenceOpen[i] ? `<pre class="c-packet-log">${esc(q.evidenceText)}</pre>` : ''}
+      ${fail >= 2 ? `<div class="c-escalate"><button class="c-btn" data-action="evidence" data-q="${i}">Show evidence</button><button class="c-btn" data-action="explain" data-q="${i}">Ask Forge to explain</button><button class="c-btn" data-action="stop-attest">Stop — I cannot attest</button></div>` : ''}
+    </section>`;
+  }
+
+  function renderCStageAttest() {
+    if (allPassed()) return renderCFinal();
+    return `<div class="c-viva">
+      <div class="c-eyebrow">Attestation · ${TASK.id}</div>
+      <h1 class="c-title">Explain it back.</h1>
+      <p class="c-lede">Three questions. Your answers are recorded verbatim; Forge cannot answer them for you.</p>
+      <div class="c-progress">${QUESTIONS.map((_, i) => `<div class="${state.attestation.grades[i] === 'strong' ? 'pass' : state.attestation.grades[i] ? 'fail' : ''}"></div>`).join('')}</div>
+      ${QUESTIONS.map((q, i) => renderCQuestion(q, i)).join('')}
+      <div class="c-attest-locked">Answer all three to unlock attestation. A wrong or incomplete answer stays open; it never auto-passes.</div>
+    </div>`;
+  }
+
+  function renderCFinal() {
+    const a = state.attestation;
+    return `<div class="c-viva">
+      <div class="c-eyebrow">Attestation · ${TASK.id}</div>
+      <h1 class="c-title">The human act.</h1>
+      <p class="c-lede">All three answers are recorded. Read them once more, then attest.</p>
+      <div class="c-progress">${QUESTIONS.map(() => '<div class="pass"></div>').join('')}</div>
+      ${QUESTIONS.map((q, i) => `<div class="c-q"><div class="c-q-head"><div class="c-q-num">0${q.n}</div><div><h2>${esc(q.text)}</h2><div class="evidence">${esc(a.answers[i])}</div></div></div></div>`).join('')}
+      <div class="c-attest-final">
+        <div class="c-eyebrow">The human act</div>
+        <h2>I attest that these are my words and I understand this change.</h2>
+        <button class="c-check" data-action="toggle-final" aria-pressed="${a.finalChecked}"><span class="box">${a.finalChecked ? '✓' : ''}</span><span>I understand the decision, the diff, and the verification evidence. This is my attestation, not the agent’s.</span></button>
+        <button class="c-btn c-btn-primary" data-action="attest-final" ${a.finalChecked ? '' : 'disabled'} style="margin-top:10px">Record attestation · done</button>
+        <p>The agent cannot check this box for you. A wrong or incomplete answer never silently passes.</p>
+      </div>
+    </div>`;
+  }
+
+  function renderCConsoleAway() {
+    return `<div class="c-receipt"><b>waiting for you</b><br>2h 14m · gate D-3 pending<br>no timeout · the room can close</div>
+      <div class="c-facts"><div><span>resume</span><span>forge resume ${TASK.id}</span></div><div><span>state</span><span>on disk · verified on resume</span></div></div>
+      <div class="c-actions"><button class="c-btn c-btn-primary" data-action="resume-away">resume →</button></div>`;
+  }
+
+  function renderCStageAway() {
+    return `<div class="c-wait">
+      <div class="c-eyebrow">Waiting · 2h 14m</div>
+      <h1 class="c-wait-title">Nothing expired.</h1>
+      <p class="c-lede">You closed the laptop at 14:06. The task is paused at decision D-3, not failed and not approved. The terminal is the source of truth; this room can close.</p>
+      <div class="c-wait-table">
+        <div><dt>task</dt><dd>${TASK.id} · ${esc(TASK.title)}</dd></div>
+        <div><dt>state</dt><dd>decision — gate ${DECISION.id} pending</dd></div>
+        <div><dt>timeout</dt><dd>None. The gate persists indefinitely.</dd></div>
+        <div><dt>resume</dt><dd><code>forge resume ${TASK.id}</code> restores the terminal and prints a fresh room URL.</dd></div>
+      </div>
+      <button class="c-btn c-btn-primary" data-action="resume-away">Resume where I left off →</button>
+    </div>`;
+  }
+
+  function renderCConsoleLocked() {
+    return `<div class="c-receipt"><b>review locked</b><br>D-3 is ${esc(decisionStatusLabel())}<br>resolve it in the terminal first</div><div class="c-actions"><button class="c-btn" data-action="flow" data-flow="decision">decision →</button></div>`;
+  }
+
+  function renderCStageLocked(what) {
+    return `<div class="c-decision">
+      <div class="c-eyebrow">${what} locked</div>
+      <h1 class="c-title">The room is waiting on D-3.</h1>
+      <p class="c-lede">${state.decision.status === 'pending' ? 'The task is stopped at the decision. Resolve it in the terminal before reviewing the result.' : 'The task is paused. Resume it before reviewing the result.'}</p>
+      <div class="c-answer-note"><span class="c-key">T</span><span>This gate lives in the terminal. No timeout; nothing expires.</span></div>
+      <div class="c-actions"><button class="c-btn c-btn-primary" data-action="flow" data-flow="decision">Return to the decision</button></div>
+    </div>`;
+  }
+
+  function renderCConsoleDone() {
+    return `<div class="c-receipt"><b>✓ attested · done</b><br>ledger committed · ${ATTEST_PATH}<br>branch unmerged · merge is yours</div>
+      <div class="c-actions"><button class="c-btn" data-action="reset">start over</button></div>`;
+  }
+
+  function renderCStageDone() {
+    return `<div class="c-decision">
+      <div class="c-done-mark">✓</div>
+      <div class="c-eyebrow">${TASK.id} · done · attested by ${esc(TASK.owner)} at 14:12</div>
+      <h1 class="c-title">Every decision is explainable.</h1>
+      <p class="c-lede">The ledger holds the decisions and your words. The branch is yours to merge; Forge did not merge it.</p>
+      <div class="c-ledger"><div class="c-ledger-head"><b>Done</b><span>human act</span></div><dl><div><dt>attestation</dt><dd>${ATTEST_PATH}</dd></div><div><dt>ledger</dt><dd>${LEDGER_PATH}</dd></div><div><dt>branch</dt><dd>${esc(TASK.branch)} — unmerged</dd></div><div><dt>worktree</dt><dd>kept until merge</dd></div></dl></div>
+      <div class="c-actions" style="margin-top:16px"><button class="c-btn" data-action="reset">Start over (prototype)</button></div>
+    </div>`;
+  }
+
+  function renderC() {
+    if (state.done) return shellC(renderCConsoleDone(), renderCStageDone());
+    if (state.away) return shellC(renderCConsoleAway(), renderCStageAway());
+    if (state.flow === 'decision') return shellC(renderCConsoleDecision(), renderCStageDecision());
+    if (state.flow === 'review') {
+      if (!canReview()) return shellC(renderCConsoleLocked(), renderCStageLocked('review'));
+      return shellC(renderCConsoleReview(), renderCStageReview());
+    }
+    if (!canReview()) return shellC(renderCConsoleLocked(), renderCStageLocked('attestation'));
+    if (state.stopped) return shellC('<div class="c-receipt"><b>stopped · attestation</b><br>nothing merged</div>', renderCStopped());
+    return shellC(renderCConsoleAttest(), renderCStageAttest());
+  }
+
+  function renderCStopped() {
+    return `<div class="c-decision">
+      <div class="c-eyebrow">Attestation · ${TASK.id}</div>
+      <h1 class="c-title">Stopped, not done.</h1>
+      <p class="c-lede">You could not explain the change after two attempts. Nothing merged. Read the decision record or ask for a walkthrough, then reopen review.</p>
+      <div class="c-ledger"><div class="c-ledger-head"><b>State</b><span>unmerged</span></div><dl><div><dt>branch</dt><dd>${esc(TASK.branch)}</dd></div><div><dt>decision</dt><dd>${DECISION.id} recorded</dd></div><div><dt>attestation</dt><dd>not recorded</dd></div></dl></div>
+      <div class="c-actions" style="margin-top:16px"><button class="c-btn c-btn-primary" data-action="reopen-attest">Reopen review (prototype)</button><button class="c-btn" data-action="flow" data-flow="review">Back to review</button></div>
+    </div>`;
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Modal                                                               */
+  /* ------------------------------------------------------------------ */
+  function renderModal() {
+    const m = state.modal;
+    if (!m) return '';
+    const titles = { defer: 'Defer D-3', delegate: 'Delegate the analysis', reject: 'Reject this decision' };
+    const intros = {
+      defer: 'The request stays pending. The task pauses; there is no timeout that resolves it for you.',
+      delegate: 'Forge investigates; the decision stays yours. It returns with evidence and asks again.',
+      reject: 'Send D-3 back to planning. Execution stops until the plan is revised and approved.'
+    };
+    let fields = '';
+    if (m === 'defer') {
+      fields = `<fieldset><legend>When should it come back?</legend>
+        <label><input type="radio" name="modal-radio" value="when I say — pause the task" checked> When I say — pause the task</label>
+        <label><input type="radio" name="modal-radio" value="after Forge researches the options"> After Forge researches the options</label>
+        <label><input type="radio" name="modal-radio" value="at the next run"> At the next run</label>
+      </fieldset><label class="modal-label" for="modal-note">Note (optional)</label><textarea id="modal-note" data-modal-input="note" rows="3" placeholder="Why are you deferring?"></textarea>`;
+    } else if (m === 'delegate') {
+      fields = `<fieldset><legend>What should Forge investigate?</legend>
+        <label><input type="radio" name="modal-radio" value="research the options" checked> Research the options — durability, ops burden, cost</label>
+        <label><input type="radio" name="modal-radio" value="prototype the migration and down path"> Prototype the migration and the down path</label>
+        <label><input type="radio" name="modal-radio" value="a second opinion"> Bring a second opinion</label>
+        <label class="disabled"><input type="radio" name="modal-radio" value="teammate" disabled> Delegate to a teammate — not in v1 (no shared live state)</label>
+      </fieldset><label class="modal-label" for="modal-note">What should it answer? (optional)</label><textarea id="modal-note" data-modal-input="note" rows="3" placeholder="e.g. compare the ops burden, not just the storage model"></textarea>`;
+    } else {
+      fields = `<fieldset><legend>What is wrong with this decision?</legend>
+        <label><input type="radio" name="modal-radio" value="not needed for this task" checked> Not needed for this task</label>
+        <label><input type="radio" name="modal-radio" value="the options are wrong or incomplete"> The options are wrong or incomplete</label>
+        <label><input type="radio" name="modal-radio" value="a plan change"> This needs a plan change</label>
+      </fieldset><label class="modal-label" for="modal-note">What should change? (optional)</label><textarea id="modal-note" data-modal-input="note" rows="3" placeholder="Tell Forge what to reconsider"></textarea>`;
+    }
+    return `<div class="modal-backdrop" data-action="close-modal">
+      <div class="modal-panel ${state.variant}" data-modal-panel role="dialog" aria-modal="true" aria-labelledby="modal-title">
+        <div class="modal-kicker">${state.variant === 'A' ? 'forge › decision D-3' : 'Decision D-3 · gate'}</div>
+        <h2 id="modal-title">${titles[m]}</h2>
+        <p class="modal-intro">${intros[m]}</p>
+        ${fields}
+        <div class="modal-actions">
+          <button data-action="close-modal">Cancel</button>
+          <button class="modal-submit" data-action="submit-modal">${m === 'reject' ? 'Send back to planning' : 'Confirm'}</button>
+        </div>
+      </div>
+    </div>`;
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Actions                                                             */
+  /* ------------------------------------------------------------------ */
+  function setVariant(v) {
+    state.variant = v;
+    state.openAnn = null;
+    state.modal = null;
+    resetScroll = true;
+    try {
+      const url = new URL(location.href);
+      url.searchParams.set('variant', v);
+      history.replaceState(null, '', url);
+    } catch (_) { /* file:// history can be restricted */ }
+    render();
+  }
+
+  function cycleVariant(dir) {
+    const keys = ['A', 'B', 'C'];
+    const i = keys.indexOf(state.variant);
+    setVariant(keys[(i + dir + keys.length) % keys.length]);
+  }
+
+  function setFlow(flow) {
+    state.flow = flow;
+    state.away = false;
+    state.modal = null;
+    state.openAnn = null;
+    resetScroll = true;
+    render();
+  }
+
+  function simulateAway() {
+    state.awayFrom = state.flow;
+    state.away = true;
+    state.modal = null;
+    resetScroll = true;
+    render();
+  }
+
+  function resumeAway() {
+    state.away = false;
+    state.flow = state.awayFrom;
+    resetScroll = true;
+    render();
+  }
+
+  function choose(n) {
+    if (state.decision.status !== 'pending') return;
+    const samples = Object.values(SAMPLE_RATIONALES);
+    if (!state.decision.rationale.trim() || samples.includes(state.decision.rationale)) {
+      state.decision.rationale = SAMPLE_RATIONALES[n];
+    }
+    state.decision.choice = n;
+    state.decision.error = null;
+    render();
+    const ta = document.querySelector('[data-bind="rationale"]');
+    if (ta) ta.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  }
+
+  function recordDecision() {
+    const ta = $('[data-bind="rationale"]');
+    if (ta) state.decision.rationale = ta.value;
+    if (!state.decision.choice) {
+      state.decision.error = 'Choose an option first.';
+      render();
+      return;
+    }
+    if (!state.decision.rationale.trim()) {
+      state.decision.error = 'A rationale is required. This is your words, not the model’s.';
+      render();
+      return;
+    }
+    state.decision.status = 'resolved';
+    state.decision.error = null;
+    state.decision.recordedAt = '14:06';
+    const o = currentOption();
+    state.ledger = state.ledger.filter(e => !(e.kind === 'decision' && e.id === DECISION.id));
+    state.ledger.push({
+      kind: 'decision',
+      id: DECISION.id,
+      at: '14:06',
+      text: (o ? o.title : '') + ' — ' + state.decision.rationale
+    });
+    render();
+  }
+
+  function reopenDecision() {
+    state.decision.status = 'pending';
+    state.decision.recordedAt = null;
+    state.decision.error = null;
+    state.done = false;
+    state.stopped = false;
+    state.ledger = state.ledger.filter(e => !(e.kind === 'decision' && e.id === DECISION.id));
+    render();
+  }
+
+  function forgeReturns() {
+    state.decision.status = 'pending';
+    state.decision.evidenceReturned = true;
+    state.decision.error = null;
+    render();
+  }
+
+  function openModal(kind) {
+    state.modal = kind;
+    render();
+  }
+
+  function submitModal() {
+    const m = state.modal;
+    const radio = document.querySelector('input[name="modal-radio"]:checked');
+    const noteEl = document.querySelector('[data-modal-input="note"]');
+    const value = radio ? radio.value : '';
+    const note = noteEl ? noteEl.value.trim() : '';
+    if (m === 'defer') {
+      state.decision.status = 'deferred';
+      state.decision.deferWhen = value;
+      state.decision.deferNote = note;
+    } else if (m === 'delegate') {
+      state.decision.status = 'delegated';
+      state.decision.delegateScope = value;
+      state.decision.delegateNote = note;
+    } else if (m === 'reject') {
+      state.decision.status = 'rejected';
+      state.decision.rejectReason = value;
+      state.decision.rejectNote = note;
+    }
+    state.modal = null;
+    render();
+  }
+
+  function submitAnswer(i) {
+    const a = state.attestation;
+    const ta = document.querySelector(`[data-bind="answer-${i}"]`);
+    const text = ta ? ta.value.trim() : a.answers[i];
+    a.answers[i] = text;
+    if (!text || text.length < 40) {
+      a.grades[i] = 'vague';
+      a.failures[i] += 1;
+    } else {
+      a.grades[i] = 'strong';
+    }
+    a.qIndex = firstUnanswered();
+    render();
+  }
+
+  function simulateAnswer(i, kind) {
+    const a = state.attestation;
+    a.answers[i] = QUESTIONS[i][kind];
+    a.grades[i] = kind;
+    if (kind !== 'strong') a.failures[i] += 1;
+    else a.failures[i] = 0;
+    a.qIndex = firstUnanswered();
+    render();
+  }
+
+  function toggleAt(arr, i) {
+    arr[i] = !arr[i];
+  }
+
+  function stopAttest() {
+    state.stopped = true;
+    state.attestation.passed = false;
+    resetScroll = true;
+    render();
+  }
+
+  function reopenAttest() {
+    state.stopped = false;
+    state.attestation.finalChecked = false;
+    state.attestation.qIndex = firstUnanswered();
+    resetScroll = true;
+    render();
+  }
+
+  function attestFinal() {
+    if (!state.attestation.finalChecked || !allPassed()) return;
+    state.done = true;
+    state.attestation.passed = true;
+    resetScroll = true;
+    state.ledger = state.ledger.filter(e => e.kind !== 'attestation');
+    state.ledger.push({
+      kind: 'attestation',
+      id: TASK.id,
+      at: '14:12',
+      text: 'Attested by ' + TASK.owner + '. ' + QUESTIONS.map((q, i) => 'Q' + (i + 1) + ': ' + state.attestation.answers[i]).join(' | ')
+    });
+    render();
+  }
+
+  function resetState() {
+    const v = state.variant;
+    state = fresh();
+    state.variant = v;
+    resetScroll = true;
+    render();
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Events                                                              */
+  /* ------------------------------------------------------------------ */
+  document.addEventListener('click', e => {
+    const el = e.target.closest('[data-action]');
+    if (!el) return;
+    const action = el.dataset.action;
+    if (action === 'close-modal') {
+      if (e.target.closest('[data-modal-panel]')) return;
+      state.modal = null;
+      render();
+      return;
+    }
+    switch (action) {
+      case 'flow': setFlow(el.dataset.flow); break;
+      case 'away': simulateAway(); break;
+      case 'resume-away': resumeAway(); break;
+      case 'prev-variant': cycleVariant(-1); break;
+      case 'next-variant': cycleVariant(1); break;
+      case 'toggle-state':
+        state.stateOpen = !state.stateOpen;
+        if (state.stateOpen) state.notesOpen = false;
+        render();
+        break;
+      case 'toggle-notes':
+        state.notesOpen = !state.notesOpen;
+        if (state.notesOpen) state.stateOpen = false;
+        render();
+        break;
+      case 'reset': resetState(); break;
+      case 'choose': choose(Number(el.dataset.choice)); break;
+      case 'record-decision': recordDecision(); break;
+      case 'reopen-decision': reopenDecision(); break;
+      case 'forge-returns': forgeReturns(); break;
+      case 'modal': openModal(el.dataset.modal); break;
+      case 'submit-modal': submitModal(); break;
+      case 'review-tab':
+        state.reviewTab = el.dataset.tab;
+        state.openAnn = null;
+        render();
+        break;
+      case 'rail-tab':
+        state.railTab = el.dataset.tab;
+        state.openAnn = null;
+        render();
+        break;
+      case 'ann':
+        state.openAnn = state.openAnn === el.dataset.ann ? null : el.dataset.ann;
+        render();
+        break;
+      case 'check':
+        state.openCheck = state.openCheck === el.dataset.check ? null : el.dataset.check;
+        render();
+        break;
+      case 'submit-answer': submitAnswer(Number(el.dataset.q)); break;
+      case 'simulate-answer': simulateAnswer(Number(el.dataset.q), el.dataset.kind); break;
+      case 'evidence': toggleAt(state.attestation.evidenceOpen, Number(el.dataset.q)); render(); break;
+      case 'explain': toggleAt(state.attestation.explainOpen, Number(el.dataset.q)); render(); break;
+      case 'stop-attest': stopAttest(); break;
+      case 'reopen-attest': reopenAttest(); break;
+      case 'toggle-final':
+        state.attestation.finalChecked = !state.attestation.finalChecked;
+        render();
+        break;
+      case 'attest-final': attestFinal(); break;
+      case 'focus-room': {
+        const target = document.querySelector('.c-stage textarea, .b-main textarea, .c-attest-final .c-check, .b-attest-final .b-check');
+        if (target) {
+          target.focus();
+          target.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        }
+        break;
+      }
+      default: break;
+    }
+  });
+
+  document.addEventListener('input', e => {
+    const bind = e.target.dataset && e.target.dataset.bind;
+    if (!bind) return;
+    if (bind === 'rationale') {
+      state.decision.rationale = e.target.value;
+      $$('[data-live="rationale"]').forEach(n => {
+        n.textContent = e.target.value.trim() || 'Your words will appear here.';
+      });
+      $$('[data-live="words"]').forEach(n => { n.textContent = words(e.target.value); });
+      if (state.stateOpen) renderStateDrawer();
+    } else if (bind.indexOf('answer-') === 0) {
+      const i = Number(bind.split('-')[1]);
+      state.attestation.answers[i] = e.target.value;
+      if (state.stateOpen) renderStateDrawer();
+    }
+  });
+
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') {
+      if (state.modal) { state.modal = null; render(); return; }
+      if (state.stateOpen || state.notesOpen) { state.stateOpen = false; state.notesOpen = false; render(); return; }
+    }
+    if (e.target.closest('input, textarea, select, [contenteditable]')) return;
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    if (e.key === 'ArrowLeft') { e.preventDefault(); cycleVariant(-1); return; }
+    if (e.key === 'ArrowRight') { e.preventDefault(); cycleVariant(1); return; }
+    if ((state.variant === 'A' || state.variant === 'C') && state.flow === 'review' && canReview()) {
+      if (e.key === 'a') { e.preventDefault(); setFlow('attest'); return; }
+      if (state.variant === 'A' && ['1', '2', '3', '4'].includes(e.key)) {
+        e.preventDefault();
+        state.reviewTab = ['diff', 'map', 'assumptions', 'checks'][Number(e.key) - 1];
+        state.openAnn = null;
+        render();
+        return;
+      }
+    }
+    if (state.variant === 'A' && state.flow === 'attest' && canReview() && !state.stopped && state.attestation.qIndex < QUESTIONS.length) {
+      if (e.key === 'e') {
+        e.preventDefault();
+        toggleAt(state.attestation.evidenceOpen, state.attestation.qIndex);
+        render();
+        return;
+      }
+      if (e.key === 's') { e.preventDefault(); stopAttest(); return; }
+    }
+    const terminal = state.variant === 'A' || state.variant === 'C';
+    if (!terminal || state.flow !== 'decision' || state.decision.status !== 'pending' || state.modal) return;
+    if (['1', '2', '3'].includes(e.key)) { e.preventDefault(); choose(Number(e.key)); return; }
+    if (e.key === 'd') { e.preventDefault(); openModal('defer'); return; }
+    if (e.key === 'g') { e.preventDefault(); openModal('delegate'); return; }
+    if (e.key === 'x') { e.preventDefault(); openModal('reject'); return; }
+    if (e.key === 'Enter' && state.decision.choice && !e.target.closest('button')) {
+      e.preventDefault();
+      recordDecision();
+    }
+  });
+
+  /* ------------------------------------------------------------------ */
+  render();
+})();
+</script>
+</body>
+</html>
