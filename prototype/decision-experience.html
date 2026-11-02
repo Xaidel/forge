@@ -299,6 +299,96 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, [tabindex]:fo
 .cursor { display: inline-block; width: 8px; height: 15px; background: #85d39b; vertical-align: -2px; animation: blink 1.1s steps(1) infinite; }
 @keyframes blink { 50% { opacity: 0; } }
 
+/* A — polished terminal: app tabs, status header, composer, split panes */
+.term-brand { display: flex; align-items: baseline; gap: 6px; }
+.term-brand b { color: #ffbd5c; font-weight: 600; letter-spacing: .05em; }
+.term-brand span { color: #527361; font-size: 9.5px; letter-spacing: .08em; }
+.term-bar .session { color: #9fc3aa; margin-left: 10px; }
+.term-bar .cwd { color: #6f8f76; }
+.term-bar .sep { color: #2d4737; }
+.term-tabs {
+  flex: none; display: flex; align-items: stretch; gap: 0;
+  height: 34px; padding: 0 12px;
+  background: #08140d; border-bottom: 1px solid #274234;
+}
+.t-tab-product {
+  border: 0; border-bottom: 2px solid transparent; background: transparent;
+  color: #6f8f76; padding: 0 13px;
+  font: 11.5px/1 "Cascadia Code", "JetBrains Mono", Consolas, monospace;
+  letter-spacing: .03em;
+}
+.t-tab-product:hover { color: #cfe7d6; }
+.t-tab-product[aria-pressed="true"] { color: #ffbd5c; border-bottom-color: #ffbd5c; }
+.t-tab-product.locked { color: #527361; }
+.t-tabs-right { margin-left: auto; display: flex; align-items: center; color: #527361; font-size: 10px; letter-spacing: .04em; white-space: nowrap; }
+
+.t-status { display: flex; justify-content: space-between; gap: 18px; flex-wrap: wrap; margin-bottom: 12px; padding-bottom: 9px; border-bottom: 1px solid #1d3527; }
+.t-status-title { color: #e2f4e7; font-size: 14px; line-height: 1.35; }
+.t-status-meta { color: #6f8f76; font-size: 11.5px; margin-top: 2px; }
+.t-status-side { display: grid; grid-template-columns: auto auto; gap: 2px 10px; font-size: 10.5px; color: #9fc3aa; text-align: right; }
+.t-status-side > div { display: flex; gap: 7px; justify-content: flex-end; }
+.t-status-side span { color: #527361; text-transform: uppercase; letter-spacing: .08em; font-size: 9.5px; }
+
+.term-composer { flex: none; border-top: 1px solid #274234; background: #08140d; padding: 9px 16px 8px; }
+.t-composer-head { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; font-size: 11px; letter-spacing: .03em; margin-bottom: 5px; }
+.t-composer-line { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 12px; }
+.t-prompt-inline { color: #85d39b; }
+.t-composer-actions { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; margin-top: 6px; }
+.term-composer textarea {
+  width: 100%; min-height: 47px; max-height: 92px; resize: vertical;
+  background: #06100a; color: #d8f0df; border: 1px solid #3c5a47; border-radius: 2px;
+  padding: 7px 9px; font: inherit; line-height: 1.45;
+}
+.term-composer textarea:focus { border-color: #ffbd5c; outline: none; }
+.term-composer textarea::placeholder { color: #5e7a66; opacity: 1; }
+.term-composer .t-sim { margin: 0; padding: 3px 6px; border-style: dashed; }
+.term-composer .t-error { margin-top: 6px; }
+.t-checkbox-inline { width: auto; flex: 1 1 380px; margin: 0; }
+
+.t-decision-grid { display: grid; grid-template-columns: minmax(0, 1fr) 330px; gap: 14px; align-items: start; }
+.t-decision-main { min-width: 0; }
+.t-side { border-left: 1px solid #274234; padding-left: 14px; }
+.t-side-section { padding: 8px 0; border-bottom: 1px dashed #1d3527; }
+.t-side-section:last-child { border-bottom: 0; }
+.t-side-head { font-size: 9.5px; letter-spacing: .12em; text-transform: uppercase; color: #6f8f76; margin-bottom: 3px; }
+.t-side p { margin: 0 0 5px; font-size: 11.5px; line-height: 1.5; color: #9fc3aa; }
+.t-side p:last-child { margin-bottom: 0; }
+.t-ledger-mini { background: #06100a; border: 1px solid #2d4737; padding: 7px 8px; font-size: 10.5px; line-height: 1.55; color: #9fc3aa; white-space: pre-wrap; overflow-wrap: anywhere; }
+
+.t-review-head { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; align-items: baseline; margin-bottom: 8px; }
+.t-review-grid { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 12px; align-items: start; }
+.t-filelist { border: 1px solid #2d4737; background: #06100a; }
+.t-filelist-head { padding: 6px 8px; border-bottom: 1px solid #2d4737; color: #6f8f76; font-size: 9.5px; letter-spacing: .1em; text-transform: uppercase; }
+.t-fileitem {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px;
+  width: 100%; text-align: left; background: transparent; border: 0; border-bottom: 1px solid #1d3527;
+  color: #9fc3aa; padding: 7px 8px; font: inherit; font-size: 10.5px; line-height: 1.4;
+}
+.t-fileitem:hover { background: #0c1d13; }
+.t-fileitem[aria-pressed="true"] { background: #10251a; border-left: 2px solid #ffbd5c; padding-left: 6px; color: #e2f4e7; }
+.t-fileitem .path { overflow-wrap: anywhere; }
+.t-fileitem .path b { color: inherit; font-weight: 500; }
+.t-fileitem .path small { display: block; color: #527361; font-size: 9px; line-height: 1.3; }
+.t-fileitem .stat { color: #527361; white-space: nowrap; }
+.t-diff-wrap { min-width: 0; }
+
+.t-attest-grid { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 14px; align-items: start; }
+.t-attest-main { min-width: 0; }
+.t-evidence { border-left: 1px solid #274234; padding-left: 14px; }
+.t-evidence-title { color: #e2f4e7; font-weight: 600; margin: 4px 0 5px; }
+.t-evidence p { color: #9fc3aa; font-size: 11.5px; line-height: 1.5; margin: 0 0 8px; }
+.t-evidence .t-pre { margin: 0 0 8px; }
+.t-evidence .t-dim { font-size: 10.5px; line-height: 1.5; }
+
+@media (max-width: 1120px) {
+  .t-decision-grid, .t-attest-grid { grid-template-columns: minmax(0, 1fr); }
+  .t-side, .t-evidence { border-left: 0; border-top: 1px solid #274234; padding-left: 0; padding-top: 10px; }
+  .t-review-grid { grid-template-columns: minmax(0, 1fr); }
+  .t-filelist { display: flex; flex-wrap: wrap; }
+  .t-fileitem { width: auto; border-right: 1px solid #1d3527; }
+  .t-filelist-head { width: 100%; }
+}
+
 /* ------------------------------------------------------------------ */
 /* B — Local web cockpit                                                */
 /* ------------------------------------------------------------------ */
@@ -1188,6 +1278,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, [tabindex]:fo
     },
     ledger: [],
     reviewTab: 'diff',
+    reviewFile: 'all',
     railTab: 'decisions',
     openAnn: null,
     openCheck: null,
@@ -1435,47 +1526,153 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, [tabindex]:fo
   /* ------------------------------------------------------------------ */
   /* A — Terminal-native                                                 */
   /* ------------------------------------------------------------------ */
-  function shellA(body, foot) {
+  function shellA(body) {
     return `<section class="vA"><div class="term">
-      <div class="term-bar">
-        <span class="dots"><span class="dot"></span><span class="dot"></span><span class="dot"></span></span>
-        <span class="title">forge — ${TASK.repo} — ${TASK.id}</span>
-        <span class="size">132×42</span>
-      </div>
+      ${renderATermBar()}
+      ${renderATabs()}
       <div class="term-screen">${renderATermStatus()}${body}</div>
-      <div class="term-foot">${foot}</div>
+      <div class="term-composer">${renderAComposer()}</div>
+      <div class="term-foot">${renderATermFoot()}</div>
     </div></section>`;
+  }
+
+  function renderATermBar() {
+    return `<div class="term-bar">
+      <span class="dots"><span class="dot"></span><span class="dot"></span><span class="dot"></span></span>
+      <span class="term-brand"><b>forge</b><span>0.1</span></span>
+      <span class="sep">·</span>
+      <span class="title cwd">${esc(TASK.repo)}</span>
+      <span class="sep">·</span>
+      <span class="session">${TASK.id}</span>
+      <span class="size">120×38</span>
+    </div>`;
+  }
+
+  function renderATabs() {
+    const locked = !canReview();
+    const active = key => (!state.away && !state.done && state.flow === key) ? 'true' : 'false';
+    return `<div class="term-tabs">
+      <button class="t-tab-product" data-action="flow" data-flow="decision" aria-pressed="${active('decision')}">decision</button>
+      <button class="t-tab-product ${locked ? 'locked' : ''}" data-action="flow" data-flow="review" aria-pressed="${active('review')}">review${locked ? ' · locked' : ''}</button>
+      <button class="t-tab-product ${locked ? 'locked' : ''}" data-action="flow" data-flow="attest" aria-pressed="${active('attest')}">attest${locked ? ' · locked' : ''}</button>
+      <button class="t-tab-product" data-action="away" aria-pressed="${state.away ? 'true' : 'false'}">away</button>
+      <span class="t-tabs-right">risk ${TASK.risk} · policy v3</span>
+    </div>`;
   }
 
   function renderATermStatus() {
     return `<div class="t-status">
-      <div class="t-status-row"><span class="t-green">${TASK.id}</span> ${esc(TASK.title)}</div>
-      <div class="t-status-row"><span class="t-dim">branch</span> ${esc(TASK.branch)} <span class="t-dim">base</span> ${esc(TASK.base)} <span class="t-dim">step</span> ${esc(TASK.step)} <span class="t-risk">risk ${esc(TASK.risk)}</span> <span class="t-dim">state</span> <span class="t-amber">${esc(taskStateLabel())}</span></div>
-      <div class="t-rule">──────────────────────────────────────────────────────────────────────────────────────────────</div>
+      <div class="t-status-main">
+        <div class="t-status-title"><span class="t-green">${TASK.id}</span> ${esc(TASK.title)}</div>
+        <div class="t-status-meta">branch ${esc(TASK.branch)} · base ${esc(TASK.base)} · step ${esc(TASK.step)} · risk ${esc(TASK.risk)}</div>
+      </div>
+      <div class="t-status-side">
+        <div><span>state</span>${esc(taskStateLabel())}</div>
+        <div><span>gate</span>${state.decision.status === 'pending' ? 'D-3' : esc(state.flow)}</div>
+        <div><span>sandbox</span>MXC · guarded</div>
+      </div>
     </div>`;
   }
 
   function renderATermFoot() {
-    if (state.away) return `<span>resume · <span class="key">forge resume ${TASK.id}</span></span><span>no timeout · closing this terminal is safe</span>`;
-    if (state.done) return `<span>attested · branch is yours to merge</span><span>← → switch variant</span>`;
-    if (state.flow === 'decision' && state.decision.status === 'pending') {
-      return `<span><span class="key">1 2 3</span> choose · <span class="key">d</span> defer · <span class="key">g</span> delegate · <span class="key">x</span> reject · <span class="key">↵</span> record</span><span>← → switch variant</span>`;
-    }
-    if (state.flow === 'review') return `<span><span class="key">a</span> attest · <span class="key">1–4</span> tabs · <span class="key">← →</span> switch variant</span><span>packet 1/1</span>`;
-    if (state.stopped) return `<span>stopped · nothing merged</span><span>reopen review to try again</span>`;
-    if (state.flow === 'attest' && allPassed()) return `<span>check the box · record attestation</span><span>merge remains yours</span>`;
-    if (state.flow === 'attest') return `<span><span class="key">↵</span> submit · <span class="key">e</span> evidence · <span class="key">s</span> stop</span><span>answers are recorded verbatim</span>`;
-    return `<span>← → switch variant</span><span>prototype</span>`;
+    if (state.away) return `<span>forge · ${TASK.id}</span><span>waiting · no timeout</span><span>← → switch variant</span>`;
+    if (state.done) return `<span>forge · ${TASK.id}</span><span>done · branch unmerged</span><span>← → switch variant</span>`;
+    if (state.stopped) return `<span>forge · ${TASK.id}</span><span>stopped · nothing merged</span><span>← → switch variant</span>`;
+    return `<span>forge 0.1 · ${TASK.id}</span><span>${esc(taskStateLabel())}${state.flow === 'review' ? ' · tab ' + esc(state.reviewTab) : ''}</span><span>← → switch variant</span>`;
   }
 
   function renderA() {
-    if (state.done) return shellA(renderADone(), renderATermFoot());
-    if (state.away) return shellA(renderAAway(), renderATermFoot());
+    if (state.done) return shellA(renderADone());
+    if (state.away) return shellA(renderAAway());
     let body;
     if (state.flow === 'decision') body = renderADecision();
     else if (state.flow === 'review') body = canReview() ? renderAReview() : renderALocked('review');
     else body = canReview() ? (state.stopped ? renderAStopped() : renderAAttest()) : renderALocked('attestation');
-    return shellA(body, renderATermFoot());
+    return shellA(body);
+  }
+
+  function renderAComposer() {
+    if (state.done) {
+      return `<div class="t-composer-line"><span class="t-green">✓ ${TASK.id} done</span><span class="t-dim">attested by ${esc(TASK.owner)} · 14:12 · branch unmerged</span></div>
+        <div class="t-composer-actions"><button class="t-btn" data-action="reset">start over (prototype)</button><span class="t-dim">merge remains yours</span></div>`;
+    }
+    if (state.away) {
+      return `<div class="t-composer-line"><span class="t-prompt-inline">forge›</span><span class="t-dim">waiting for you · gate ${DECISION.id} pending · no timeout</span></div>
+        <div class="t-composer-actions"><button class="t-btn t-btn-primary" data-action="resume-away">resume ${TASK.id}</button><span class="t-dim">closing the terminal is safe</span></div>`;
+    }
+    if (state.flow === 'decision') return composerDecisionA();
+    if (state.flow === 'review') return composerReviewA();
+    return composerAttestA();
+  }
+
+  function composerDecisionA() {
+    const d = state.decision;
+    if (d.status === 'resolved') {
+      return `<div class="t-composer-line"><span class="t-green">✓ ${DECISION.id} recorded</span><span class="t-dim">${LEDGER_PATH} · human-authored</span></div>
+        <div class="t-composer-actions"><button class="t-btn t-btn-primary" data-action="flow" data-flow="review">v · review →</button><button class="t-btn" data-action="reopen-decision">reopen (prototype)</button><span class="t-dim">step 3 resumed · verification next</span></div>`;
+    }
+    if (d.status === 'deferred' || d.status === 'delegated' || d.status === 'rejected') {
+      const label = d.status === 'deferred' ? 'deferred · paused' : d.status === 'delegated' ? 'delegated for analysis' : 'sent back to planning';
+      return `<div class="t-composer-line"><span class="t-amber">${DECISION.id} ${label}</span><span class="t-dim">no timeout · review locked</span></div>
+        <div class="t-composer-actions">${d.status === 'delegated' ? `<button class="t-btn t-btn-primary" data-action="forge-returns">Forge returns with evidence</button>` : ''}<button class="t-btn" data-action="reopen-decision">reopen (prototype)</button></div>`;
+    }
+    const actions = `<div class="t-composer-actions">
+      ${d.choice ? `<button class="t-btn t-btn-primary" data-action="record-decision">↵ record &amp; resume</button>` : ''}
+      <button class="t-btn" data-action="modal" data-modal="defer">d · defer</button>
+      <button class="t-btn" data-action="modal" data-modal="delegate">g · delegate</button>
+      <button class="t-btn t-btn-danger" data-action="modal" data-modal="reject">x · reject</button>
+      ${d.choice ? `<span class="t-dim">provenance human · Forge will not rewrite it</span>` : `<span class="t-dim">choose [1–3] to write the rationale</span>`}
+    </div>`;
+    if (!d.choice) {
+      return `<div class="t-composer-line"><span class="t-prompt-inline">forge decision›</span><span class="t-dim">choose 1–3, or d/g/x</span></div>${actions}${d.error ? `<div class="t-error">! ${esc(d.error)}</div>` : ''}`;
+    }
+    return `<div class="t-composer-head"><span class="t-amber">rationale · required</span><span class="t-dim">your words · written verbatim · <span data-live="words">${words(d.rationale)}</span> words</span></div>
+      <textarea data-bind="rationale" rows="2" aria-label="Your rationale">${esc(d.rationale)}</textarea>
+      ${actions}
+      ${d.error ? `<div class="t-error">! ${esc(d.error)}</div>` : ''}`;
+  }
+
+  function composerReviewA() {
+    if (!canReview()) {
+      return `<div class="t-composer-line"><span class="t-amber">review locked</span><span class="t-dim">resolve ${DECISION.id} first</span></div>
+        <div class="t-composer-actions"><button class="t-btn" data-action="flow" data-flow="decision">b · back to decision</button></div>`;
+    }
+    return `<div class="t-composer-line"><span class="t-prompt-inline">forge review›</span><span class="t-dim">1–4 tabs · a attest · b back</span></div>
+      <div class="t-composer-actions"><button class="t-btn t-btn-primary" data-action="flow" data-flow="attest">a · attest →</button><button class="t-btn" data-action="flow" data-flow="decision">b · back</button><span class="t-dim">the agent cannot attest for you</span></div>`;
+  }
+
+  function composerAttestA() {
+    if (!canReview()) {
+      return `<div class="t-composer-line"><span class="t-amber">attestation locked</span><span class="t-dim">resolve ${DECISION.id} first</span></div>
+        <div class="t-composer-actions"><button class="t-btn" data-action="flow" data-flow="decision">b · back to decision</button></div>`;
+    }
+    if (state.stopped) {
+      return `<div class="t-composer-line"><span class="t-red">stopped</span><span class="t-dim">attestation incomplete · nothing merged</span></div>
+        <div class="t-composer-actions"><button class="t-btn" data-action="reopen-attest">reopen review (prototype)</button><button class="t-btn" data-action="flow" data-flow="review">b · back to review</button></div>`;
+    }
+    const a = state.attestation;
+    if (allPassed()) {
+      return `<div class="t-composer-line"><span class="t-green">all three recorded</span><span class="t-dim">the human act · answers are verbatim</span></div>
+        <div class="t-composer-actions">
+          <button class="t-checkbox t-checkbox-inline" data-action="toggle-final" aria-pressed="${a.finalChecked}">${a.finalChecked ? '[x]' : '[ ]'} I attest that these are my words and I understand this change.</button>
+          <button class="t-btn t-btn-primary" data-action="attest-final" ${a.finalChecked ? '' : 'disabled'}>record attestation</button>
+          <button class="t-btn" data-action="flow" data-flow="review">b · back</button>
+        </div>`;
+    }
+    const i = a.qIndex;
+    const q = QUESTIONS[i];
+    if (!q) {
+      return `<div class="t-composer-line"><span class="t-amber">attestation</span><span class="t-dim">no question available</span></div>`;
+    }
+    const fail = a.failures[i];
+    return `<div class="t-composer-head"><span class="t-amber">answer Q${q.n}/3</span><span class="t-dim">recorded verbatim · ${fail} failed ${fail === 1 ? 'attempt' : 'attempts'}</span></div>
+      <textarea class="t-answer" data-bind="answer-${i}" rows="2" aria-label="Your answer to question ${q.n}">${esc(a.answers[i])}</textarea>
+      <div class="t-composer-actions">
+        <button class="t-btn t-btn-primary" data-action="submit-answer" data-q="${i}">↵ submit answer</button>
+        <span class="t-sim t-sim-inline"><span>prototype:</span>${['strong', 'vague', 'wrong'].map(k => `<button data-action="simulate-answer" data-q="${i}" data-kind="${k}">${k}</button>`).join('')}</span>
+        <button class="t-btn" data-action="flow" data-flow="review">b · back</button>
+        <span class="t-dim">evidence →</span>
+      </div>`;
   }
 
   function optionA(o) {
@@ -1491,41 +1688,40 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, [tabindex]:fo
     </button>`;
   }
 
-  function renderARationale() {
-    return `<div class="t-rationale">
-      <div class="t-rationale-head"><span class="t-amber">rationale · required</span><span class="t-dim">your words, written verbatim · <span data-live="words">${words(state.decision.rationale)}</span> words</span></div>
-      <textarea data-bind="rationale" rows="4" aria-label="Your rationale">${esc(state.decision.rationale)}</textarea>
-      <div class="t-rationale-foot"><span class="t-dim">provenance: human · Forge will not rewrite it</span><button class="t-btn t-btn-primary" data-action="record-decision">↵ record &amp; resume</button></div>
-    </div>`;
-  }
-
   function renderADecision() {
     const d = state.decision;
     if (d.status === 'resolved') return renderARecorded();
     if (d.status === 'deferred' || d.status === 'delegated' || d.status === 'rejected') return renderAParked();
-    return `<div class="t-prompt">decision ${DECISION.id}</div>
-      <div class="t-card">
-        <div class="t-card-head"><span class="t-amber">DECISION ${DECISION.id}</span><span class="t-dim">blocked ${WAIT}</span></div>
-        <h2 class="t-title">${esc(DECISION.title)}</h2>
-        <div class="t-meta"><span class="t-chip t-chip-warn">trigger: ${esc(DECISION.trigger)}</span><span class="t-chip">${esc(DECISION.policy)}</span><span class="t-chip">step ${esc(TASK.step)}</span></div>
-        ${d.evidenceReturned ? `<div class="t-feedback"><b>Forge returned with evidence</b><p>Redis is a managed service with a new failure mode; the Postgres path is one reversible migration. The recommendation did not change. The decision is still yours.</p></div>` : ''}
-        <p class="t-p">${esc(DECISION.why)}</p>
-        <p class="t-p t-dim">${esc(DECISION.context)}</p>
-        <div class="t-options">${DECISION.options.map(optionA).join('')}</div>
-        <div class="t-facts">
-          <div><span>recommendation</span><span>1 — Postgres table</span></div>
-          <div><span>reversibility</span><span>${esc(DECISION.reversibility)}</span></div>
-          <div><span>blast radius</span><span>${esc(DECISION.blast)}</span></div>
-          <div class="t-warn"><span>default</span><span>${esc(DECISION.default)}</span></div>
+    return `<div class="t-decision-grid">
+      <div class="t-decision-main">
+        <div class="t-prompt">decision ${DECISION.id}</div>
+        <div class="t-card">
+          <div class="t-card-head"><span class="t-amber">DECISION ${DECISION.id}</span><span class="t-dim">blocked ${WAIT}</span></div>
+          <h2 class="t-title">${esc(DECISION.title)}</h2>
+          <div class="t-meta"><span class="t-chip t-chip-warn">trigger: ${esc(DECISION.trigger)}</span><span class="t-chip">${esc(DECISION.policy)}</span><span class="t-chip">step ${esc(TASK.step)}</span></div>
+          ${d.evidenceReturned ? `<div class="t-feedback"><b>Forge returned with evidence</b><p>Redis is a managed service with a new failure mode; the Postgres path is one reversible migration. The recommendation did not change. The decision is still yours.</p></div>` : ''}
+          <p class="t-p">${esc(DECISION.why)}</p>
+          <p class="t-p t-dim">${esc(DECISION.context)}</p>
+          <div class="t-options">${DECISION.options.map(optionA).join('')}</div>
         </div>
-        ${d.choice ? renderARationale() : ''}
-        ${d.error ? `<div class="t-error">! ${esc(d.error)}</div>` : ''}
-        <div class="t-actions">
-          <button class="t-btn" data-action="modal" data-modal="defer">d · defer</button>
-          <button class="t-btn" data-action="modal" data-modal="delegate">g · delegate</button>
-          <button class="t-btn t-btn-danger" data-action="modal" data-modal="reject">x · reject</button>
-        </div>
-      </div>`;
+      </div>
+      <aside class="t-side">${renderASide()}</aside>
+    </div>`;
+  }
+
+  function renderASide() {
+    const o = currentOption();
+    return `<div class="t-side-section"><div class="t-side-head">policy</div><div class="t-chip t-chip-warn">${esc(DECISION.trigger)}</div><p>${esc(DECISION.policy.split(' · ')[0])} · pinned at a91f</p></div>
+      <div class="t-side-section"><div class="t-side-head">recommendation</div><p class="t-green">1 · Postgres table</p><p>The only option that is durable, shared, and already in the stack.</p></div>
+      <div class="t-side-section"><div class="t-side-head">reversibility</div><p>${esc(DECISION.reversibility)}</p></div>
+      <div class="t-side-section"><div class="t-side-head">blast radius</div><p>${esc(DECISION.blast)}</p></div>
+      <div class="t-side-section"><div class="t-side-head">default</div><p class="t-amber">${esc(DECISION.default)}</p></div>
+      <div class="t-side-section"><div class="t-side-head">ledger preview</div><div class="t-ledger-mini">${LEDGER_PATH}
+
+id      ${DECISION.id}
+status  ${state.decision.status === 'resolved' ? 'accepted' : 'pending'}
+chosen  ${esc(o ? o.title : '—')}
+human   “<span data-live="rationale">${esc(state.decision.rationale) || 'Your words will appear here.'}</span>”</div></div>`;
   }
 
   function renderARecorded() {
@@ -1538,7 +1734,6 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, [tabindex]:fo
         <div class="t-record"><span>rationale</span><blockquote>“${esc(d.rationale)}”</blockquote></div>
         <div class="t-record"><span>ledger</span><span>${LEDGER_PATH} <span class="t-dim">· human-authored</span></span></div>
         <div class="t-record"><span>next</span><span class="t-dim">step 3 resumed; targeted checks, then full verification</span></div>
-        <div class="t-actions"><button class="t-btn t-btn-primary" data-action="flow" data-flow="review">review the result →</button><button class="t-btn" data-action="reopen-decision">reopen (prototype)</button></div>
         ${d.choice !== 1 ? `<div class="t-sim">prototype: the diff renders the Postgres path; your choice (${esc(o ? o.title : '—')}) is recorded in state.</div>` : ''}
       </div>`;
   }
@@ -1558,10 +1753,6 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, [tabindex]:fo
         <div class="t-record"><span>${copy.label}</span><span>${esc(copy.value)}</span></div>
         ${d.deferNote || d.delegateNote || d.rejectNote ? `<div class="t-record"><span>note</span><span>${esc(d.deferNote || d.delegateNote || d.rejectNote)}</span></div>` : ''}
         <div class="t-record"><span>review</span><span class="t-dim">locked until the decision is resolved</span></div>
-        <div class="t-actions">
-          ${d.status === 'delegated' ? `<button class="t-btn t-btn-primary" data-action="forge-returns">Forge returns with evidence</button>` : ''}
-          <button class="t-btn" data-action="reopen-decision">reopen (prototype)</button>
-        </div>
       </div>`;
   }
 
@@ -1571,37 +1762,78 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, [tabindex]:fo
         <div class="t-card-head"><span class="t-amber">${what.toUpperCase()} LOCKED</span><span class="t-dim">gate pending</span></div>
         <h2 class="t-title">The ${what} is waiting on ${DECISION.id}.</h2>
         <p class="t-p">${state.decision.status === 'pending' ? 'The task is stopped at the decision. Resolve it before reviewing the result.' : 'The task is paused. Resume it before reviewing the result.'}</p>
-        <div class="t-actions"><button class="t-btn" data-action="flow" data-flow="decision">← return to the decision</button></div>
+        <div class="t-record"><span>gate</span><span>${esc(decisionStatusLabel())}</span></div>
       </div>`;
   }
 
   function renderAReview() {
-    const tabs = [['diff', '1 diff'], ['map', '2 decisions'], ['assumptions', '3 assumptions'], ['checks', '4 checks']];
-    return `<div class="t-prompt">review ${TASK.id}</div>
-      <div class="t-card">
-        <div class="t-card-head"><span class="t-green">REVIEW PACKET</span><span class="t-dim">4 files · +142 −6 · verified 12:43</span></div>
-        <div class="t-dim">The agent assembled this packet. Attestation is the only path to done.</div>
-        <div class="t-tabs">${tabs.map(([key, label]) => `<button class="t-tab" data-action="review-tab" data-tab="${key}" aria-pressed="${state.reviewTab === key}">${label}</button>`).join('')}</div>
-        ${state.reviewTab === 'diff' ? renderADiff() : state.reviewTab === 'map' ? renderAMap() : state.reviewTab === 'assumptions' ? renderAAssumptions() : renderAChecks()}
-      </div>`;
+    const tabs = [
+      ['diff', '1 diff · ' + DIFF.filter(l => l.t === 'file').length],
+      ['map', '2 decisions · ' + DECISION_MAP.length],
+      ['assumptions', '3 assumptions · ' + ASSUMPTIONS.length],
+      ['checks', '4 checks · ' + CHECKS.length]
+    ];
+    return `<div class="t-review-head">
+      <div><span class="t-green">REVIEW PACKET</span> <span class="t-dim">4 files · +142 −6 · 5 checks · verified 12:43</span></div>
+      <div class="t-dim">${esc(TASK.branch)} · ${esc(TASK.base)}</div>
+    </div>
+    <div class="t-tabs">${tabs.map(([key, label]) => `<button class="t-tab" data-action="review-tab" data-tab="${key}" aria-pressed="${state.reviewTab === key}">${label}</button>`).join('')}</div>
+    ${state.reviewTab === 'diff' ? renderADiff() : state.reviewTab === 'map' ? renderAMap() : state.reviewTab === 'assumptions' ? renderAAssumptions() : renderAChecks()}`;
+  }
+
+  function diffForFile(file) {
+    if (!file || file === 'all') return DIFF;
+    const start = DIFF.findIndex(l => l.t === 'file' && l.text === file);
+    if (start < 0) return DIFF;
+    const out = [DIFF[start]];
+    for (let i = start + 1; i < DIFF.length && DIFF[i].t !== 'file'; i++) out.push(DIFF[i]);
+    return out;
+  }
+
+  function fileAnnotations(file) {
+    const set = new Set();
+    diffForFile(file).forEach(line => (line.anns || []).forEach(a => set.add(a)));
+    return set.size;
+  }
+
+  function fileParts(path) {
+    const cut = path.lastIndexOf('/');
+    return cut < 0 ? { name: path, dir: '' } : { name: path.slice(cut + 1), dir: path.slice(0, cut + 1) };
+  }
+
+  function renderDiffLines(lines) {
+    return `<div class="t-diff">
+      ${lines.map(line => {
+        if (line.t === 'file') return `<div class="t-diff-file">${esc(line.text)} <span class="t-dim">${esc(line.stat || '')}</span></div>`;
+        if (line.t === 'meta') return `<div class="t-diff-meta">${esc(line.text)}</div>`;
+        if (line.t === 'hunk') return `<div class="t-diff-hunk">${esc(line.text)}</div>`;
+        return `<div class="t-diff-line ${line.t}">
+          <span class="t-ln">${line.n || ''}</span>
+          <span class="t-code">${line.t === 'add' ? '+' : line.t === 'del' ? '-' : ' '}${esc(line.text)}</span>
+          <span class="t-anns">${(line.anns || []).map(a => `<button class="t-ann" data-action="ann" data-ann="${a}" aria-label="Annotation ${a}">${a}</button>`).join('')}</span>
+        </div>`;
+      }).join('')}
+    </div>`;
   }
 
   function renderADiff() {
+    const files = DIFF.filter(l => l.t === 'file');
+    const active = state.reviewFile;
     const warning = state.decision.choice !== 1 ? `<div class="t-feedback"><b>prototype note</b><p>The diff renders the recommended Postgres path. Your recorded choice is ${esc(currentOption() ? currentOption().title : '—')}.</p></div>` : '';
     return `${warning}
-      <div class="t-files">${DIFF.filter(l => l.t === 'file').map(l => `<span class="t-file">${esc(l.text)}</span>`).join('')}</div>
-      <div class="t-diff">
-        ${DIFF.map(line => {
-          if (line.t === 'file') return `<div class="t-diff-file">${esc(line.text)} <span class="t-dim">${esc(line.stat || '')}</span></div>`;
-          if (line.t === 'meta') return `<div class="t-diff-meta">${esc(line.text)}</div>`;
-          if (line.t === 'hunk') return `<div class="t-diff-hunk">${esc(line.text)}</div>`;
-          return `<div class="t-diff-line ${line.t}">
-            <span class="t-ln">${line.n || ''}</span>
-            <span class="t-code">${line.t === 'add' ? '+' : line.t === 'del' ? '-' : ' '}${esc(line.text)}</span>
-            <span class="t-anns">${(line.anns || []).map(a => `<button class="t-ann" data-action="ann" data-ann="${a}" aria-label="Annotation ${a}">${a}</button>`).join('')}</span>
-          </div>`;
-        }).join('')}
-        ${state.openAnn ? renderAnnPanel(state.openAnn, 't-ann-panel') : ''}
+      <div class="t-review-grid">
+        <aside class="t-filelist">
+          <div class="t-filelist-head">files · ${files.length}</div>
+          <button class="t-fileitem" data-action="review-file" data-file="all" aria-pressed="${active === 'all'}"><span class="path">all files</span><span class="stat">+142 −6</span></button>
+          ${files.map(f => {
+            const parts = fileParts(f.text);
+            return `<button class="t-fileitem" data-action="review-file" data-file="${esc(f.text)}" aria-pressed="${active === f.text}"><span class="path"><b>${esc(parts.name)}</b><small>${esc(parts.dir)}</small></span><span class="stat">${esc(f.stat)}${fileAnnotations(f.text) ? ' · ' + fileAnnotations(f.text) : ''}</span></button>`;
+          }).join('')}
+        </aside>
+        <div class="t-diff-wrap">
+          ${renderDiffLines(diffForFile(active))}
+          ${state.openAnn ? renderAnnPanel(state.openAnn, 't-ann-panel') : ''}
+        </div>
       </div>`;
   }
 
@@ -1649,35 +1881,39 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, [tabindex]:fo
     const a = state.attestation;
     const i = a.qIndex;
     const q = QUESTIONS[i];
+    if (!q) return renderAFinal();
     const grade = a.grades[i];
     const fail = a.failures[i];
-    return `<div class="t-prompt">attest ${TASK.id}</div>
-      <div class="t-card">
-        <div class="t-card-head"><span class="t-amber">ATTESTATION ${q.n}/3</span><span class="t-dim">answers recorded verbatim</span></div>
-        <div class="t-progress">${QUESTIONS.map((qq, j) => {
-          const g = a.grades[j];
-          return `<span class="${g === 'strong' ? 'done' : j === i ? '' : 't-dim'}">${g === 'strong' ? '✓' : j === i ? '●' : '○'} Q${qq.n}</span>`;
-        }).join(' · ')}</div>
-        <h2 class="t-title">${esc(q.text)}</h2>
-        <div class="t-meta"><span class="t-chip">evidence: ${esc(q.evidence)}</span><span class="t-chip">${fail} failed ${fail === 1 ? 'attempt' : 'attempts'}</span></div>
-        <textarea class="t-answer" data-bind="answer-${i}" rows="4" aria-label="Your answer to question ${q.n}">${esc(a.answers[i])}</textarea>
-        <div class="t-sim"><span>prototype:</span>${['strong', 'vague', 'wrong'].map(k => `<button data-action="simulate-answer" data-q="${i}" data-kind="${k}">${k} answer</button>`).join('')}</div>
-        ${grade === 'strong' ? `<div class="t-feedback ok"><b>recorded</b><p>Recorded verbatim. Moving to the next question.</p></div>` : ''}
-        ${grade === 'vague' ? `<div class="t-feedback"><b>not yet</b><p>${esc(q.vagueFeedback)}</p></div>` : ''}
-        ${grade === 'wrong' ? `<div class="t-feedback bad"><b>not yet</b><p>${esc(q.wrongFeedback)}</p></div>` : ''}
-        ${a.explainOpen[i] ? `<div class="t-feedback"><b>Forge explains</b><p>${esc(q.explain)}</p></div>` : ''}
-        ${a.evidenceOpen[i] ? `<pre class="t-pre">${esc(q.evidenceText)}</pre>` : ''}
-        ${fail >= 2 ? `<div class="t-feedback bad"><b>still not attestable</b><p>Two failed attempts. Read the evidence, ask Forge to explain, or stop. Nothing merges without this.</p>
-          <div class="t-actions">
-            <button class="t-btn" data-action="evidence" data-q="${i}">show evidence</button>
-            <button class="t-btn" data-action="explain" data-q="${i}">ask Forge to explain</button>
-            <button class="t-btn t-btn-danger" data-action="stop-attest">stop — I cannot attest</button>
-          </div></div>` : ''}
-        <div class="t-actions">
-          <button class="t-btn t-btn-primary" data-action="submit-answer" data-q="${i}">↵ submit answer</button>
-          <button class="t-btn" data-action="evidence" data-q="${i}">e evidence</button>
+    return `<div class="t-attest-grid">
+      <div class="t-attest-main">
+        <div class="t-prompt">attest ${TASK.id}</div>
+        <div class="t-card">
+          <div class="t-card-head"><span class="t-amber">ATTESTATION ${q.n}/3</span><span class="t-dim">answers recorded verbatim</span></div>
+          <div class="t-progress">${QUESTIONS.map((qq, j) => {
+            const g = a.grades[j];
+            return `<span class="${g === 'strong' ? 'done' : j === i ? '' : 't-dim'}">${g === 'strong' ? '✓' : j === i ? '●' : '○'} Q${qq.n}</span>`;
+          }).join(' · ')}</div>
+          <h2 class="t-title">${esc(q.text)}</h2>
+          <div class="t-meta"><span class="t-chip">evidence: ${esc(q.evidence)}</span><span class="t-chip">${fail} failed ${fail === 1 ? 'attempt' : 'attempts'}</span></div>
+          <p class="t-dim" style="margin:8px 0 0">This checks the reasoning behind ${DECISION.id}, not whether you remember the diff.</p>
+          ${grade === 'vague' ? `<div class="t-feedback"><b>not yet</b><p>${esc(q.vagueFeedback)}</p></div>` : ''}
+          ${grade === 'wrong' ? `<div class="t-feedback bad"><b>not yet</b><p>${esc(q.wrongFeedback)}</p></div>` : ''}
+          ${a.explainOpen[i] ? `<div class="t-feedback"><b>Forge explains</b><p>${esc(q.explain)}</p></div>` : ''}
+          ${fail >= 2 ? `<div class="t-feedback bad"><b>still not attestable</b><p>Two failed attempts. Ask Forge to explain, or stop. Nothing merges without this.</p>
+            <div class="t-actions">
+              <button class="t-btn" data-action="explain" data-q="${i}">ask Forge to explain</button>
+              <button class="t-btn t-btn-danger" data-action="stop-attest">stop — I cannot attest</button>
+            </div></div>` : ''}
         </div>
-      </div>`;
+      </div>
+      <aside class="t-evidence">
+        <div class="t-side-head">evidence</div>
+        <div class="t-evidence-title">${esc(ANNOTATIONS['D-3'].title)}</div>
+        <p>${esc(ANNOTATIONS['D-3'].text)}</p>
+        <pre class="t-pre">${esc(q.evidenceText)}</pre>
+        <div class="t-dim">This is the record the question tests. Read it before answering.</div>
+      </aside>
+    </div>`;
   }
 
   function renderAFinal() {
@@ -1685,15 +1921,13 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, [tabindex]:fo
     return `<div class="t-prompt">attest ${TASK.id}</div>
       <div class="t-card t-card-ok">
         <div class="t-card-head"><span class="t-green">ALL THREE RECORDED</span><span class="t-dim">the human act</span></div>
-        <p class="t-p">Your answers are attached to the review packet. The agent cannot check this box for you.</p>
+        <p class="t-p">Your answers are attached to the review packet. The agent cannot check the box for you.</p>
         <div class="t-map-list">
           ${QUESTIONS.map((q, i) => `<div class="t-map-item resolved">
             <div class="t-map-head"><span class="t-map-id">Q${q.n}</span><span>${esc(q.text)}</span></div>
             <blockquote class="t-map-quote">“${esc(a.answers[i])}”</blockquote>
           </div>`).join('')}
         </div>
-        <button class="t-checkbox" data-action="toggle-final" aria-pressed="${a.finalChecked}">${a.finalChecked ? '[x]' : '[ ]'} I attest that these are my words and I understand this change.</button>
-        <div class="t-actions"><button class="t-btn t-btn-primary" data-action="attest-final" ${a.finalChecked ? '' : 'disabled'}>record attestation · done</button><span class="t-dim">merge remains yours</span></div>
       </div>`;
   }
 
@@ -1705,7 +1939,6 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, [tabindex]:fo
         <p class="t-p">Nothing merged. The task is stopped, not done. Read the decision record or ask for a walkthrough, then reopen the review.</p>
         <div class="t-record"><span>branch</span><span>${esc(TASK.branch)} — unmerged</span></div>
         <div class="t-record"><span>ledger</span><span>${DECISION.id} is recorded; attestation is not</span></div>
-        <div class="t-actions"><button class="t-btn" data-action="reopen-attest">reopen review (prototype)</button><button class="t-btn" data-action="flow" data-flow="review">back to review</button></div>
       </div>`;
   }
 
@@ -1719,7 +1952,6 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, [tabindex]:fo
         <div class="t-record"><span>branch</span><span>${esc(TASK.branch)} — yours to merge</span></div>
         <div class="t-record"><span>worktree</span><span>kept until merge; cleanup is never forced</span></div>
         <div class="t-record"><span>merge</span><span>Forge did not merge it. Attestation is recorded; merge is still yours.</span></div>
-        <div class="t-actions"><button class="t-btn" data-action="reset">start over (prototype)</button></div>
       </div>`;
   }
 
@@ -1731,9 +1963,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, [tabindex]:fo
         <div class="t-record"><span>state</span><span>decision — gate ${DECISION.id} pending</span></div>
         <div class="t-record"><span>timeout</span><span>none; closing this terminal is safe</span></div>
         <div class="t-record"><span>resume</span><span>forge resume ${TASK.id}</span></div>
-        <div class="t-actions"><button class="t-btn t-btn-primary" data-action="resume-away">resume where I left off</button></div>
-      </div>
-      <div class="t-prompt">resume ${TASK.id}<span class="cursor"></span></div>`;
+      </div>`;
   }
 
   /* ------------------------------------------------------------------ */
@@ -2589,7 +2819,10 @@ resume   forge resume ${TASK.id}
     state.decision.error = null;
     render();
     const ta = document.querySelector('[data-bind="rationale"]');
-    if (ta) ta.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    if (ta) {
+      if (state.variant === 'A') ta.focus({ preventScroll: true });
+      else ta.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    }
   }
 
   function recordDecision() {
@@ -2772,6 +3005,11 @@ resume   forge resume ${TASK.id}
         state.openAnn = null;
         render();
         break;
+      case 'review-file':
+        state.reviewFile = el.dataset.file;
+        state.openAnn = null;
+        render();
+        break;
       case 'rail-tab':
         state.railTab = el.dataset.tab;
         state.openAnn = null;
@@ -2834,6 +3072,15 @@ resume   forge resume ${TASK.id}
     if (e.metaKey || e.ctrlKey || e.altKey) return;
     if (e.key === 'ArrowLeft') { e.preventDefault(); cycleVariant(-1); return; }
     if (e.key === 'ArrowRight') { e.preventDefault(); cycleVariant(1); return; }
+    const terminalNow = state.variant === 'A' || state.variant === 'C';
+    if (terminalNow && !state.away && !state.done) {
+      if (e.key === 'v' && canReview()) { e.preventDefault(); setFlow('review'); return; }
+      if (e.key === 'b') {
+        e.preventDefault();
+        setFlow(state.flow === 'attest' ? 'review' : 'decision');
+        return;
+      }
+    }
     if ((state.variant === 'A' || state.variant === 'C') && state.flow === 'review' && canReview()) {
       if (e.key === 'a') { e.preventDefault(); setFlow('attest'); return; }
       if (state.variant === 'A' && ['1', '2', '3', '4'].includes(e.key)) {
