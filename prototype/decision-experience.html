@@ -414,6 +414,46 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, [tabindex]:fo
 .t-chat-send { flex: none; margin-top: 2px; }
 .t-chat-hint { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-top: 5px; color: #6f8f76; font-size: 10.5px; }
 .t-chat-hint span:last-child { color: #527361; }
+.t-activity { flex: none; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 4px 16px; background: #06100a; border-top: 1px solid #1d3527; color: #9fc3aa; font-size: 10.5px; }
+.t-activity .t-dim:last-child { margin-left: auto; }
+.t-decision-chat, .t-receipt-chat, .t-parked-chat, .t-locked-chat, .t-attest-chat, .t-attest-final-chat { border-left: 2px solid #3c5a47; padding: 6px 0 6px 12px; margin-top: 8px; }
+.t-receipt-chat { border-left-color: #4f9c67; }
+.t-parked-chat, .t-locked-chat { border-left-color: #6e5a2f; }
+.t-attest-chat { border-left-color: #ffbd5c; }
+.t-attest-final-chat { border-left-color: #4f9c67; }
+.t-receipt-head { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; font-size: 10.5px; letter-spacing: .04em; margin-bottom: 5px; }
+.t-decision-q { margin: 0 0 6px; color: #e2f4e7; font-size: 14px; line-height: 1.4; font-weight: 600; }
+.t-decision-lede { margin: 0 0 6px; color: #e2f4e7; font-size: 12.5px; line-height: 1.5; }
+.t-decision-context { margin: 0 0 8px; color: #6f8f76; font-size: 11.5px; line-height: 1.5; }
+.t-decision-options { display: grid; gap: 2px; margin: 8px 0; }
+.t-decision-row { display: grid; grid-template-columns: 32px minmax(0, 1fr); gap: 6px; text-align: left; background: transparent; border: 0; border-left: 2px solid transparent; color: inherit; padding: 4px 6px; font: inherit; line-height: 1.45; }
+.t-decision-row:hover { background: #0c1d13; }
+.t-decision-row[aria-pressed="true"] { background: #10251a; border-left-color: #ffbd5c; }
+.t-decision-key { color: #ffbd5c; }
+.t-decision-opt { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.t-decision-opt b { color: #e2f4e7; font-weight: 600; }
+.t-decision-opt em { font-style: normal; color: #ffbd5c; font-size: 10px; margin-left: 4px; }
+.t-decision-chips { color: #527361; font-size: 10px; }
+.t-decision-consequence { color: #e8d5aa; font-size: 11.5px; }
+.t-decision-meta { display: flex; flex-wrap: wrap; gap: 3px 12px; margin: 8px 0 0; color: #9fc3aa; font-size: 10.5px; }
+.t-decision-meta b { color: #e2f4e7; font-weight: 500; }
+.t-decision-hint { margin-top: 6px; color: #6f8f76; font-size: 10.5px; }
+.t-receipt-line { color: #e2f4e7; font-size: 12.5px; margin: 4px 0; }
+.t-receipt-line b { font-weight: 600; }
+.t-receipt-quote { margin: 6px 0; padding-left: 9px; border-left: 2px solid #3f6b4f; color: #d8f0df; font-size: 12px; line-height: 1.5; }
+.t-receipt-meta { color: #6f8f76; font-size: 10.5px; }
+.t-receipt-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: baseline; margin-top: 6px; color: #6f8f76; font-size: 10.5px; }
+.t-link { border: 0; background: transparent; color: #ffbd5c; padding: 0; font: inherit; text-decoration: underline; text-underline-offset: 2px; }
+.t-link:hover { color: #ffd08a; }
+.t-review-core { border: 1px solid #2d4737; background: #06100a; max-height: 260px; overflow: auto; }
+.t-review-core .t-diff { border: 0; }
+.t-review-meta { margin-top: 7px; color: #9fc3aa; font-size: 10.5px; line-height: 1.5; }
+.t-review-hint { margin-top: 4px; color: #6f8f76; font-size: 10.5px; }
+.t-attest-q { margin: 4px 0 8px; color: #e2f4e7; font-size: 13px; line-height: 1.5; }
+.t-attest-evidence { margin: 6px 0 8px; padding: 6px 8px; background: #06100a; border: 1px solid #2d4737; color: #9fc3aa; font-size: 10.5px; line-height: 1.5; }
+.t-attest-evidence .t-pre { margin: 7px 0 0; }
+.t-attest-final-chat { border-left: 2px solid #4f9c67; padding: 6px 0 6px 12px; margin-top: 8px; }
+.t-attest-final-chat .t-checkbox { margin: 8px 0; }
 
 @media (max-width: 1120px) {
   .t-decision-grid, .t-attest-grid { grid-template-columns: minmax(0, 1fr); }
@@ -984,12 +1024,22 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, [tabindex]:fo
   <p>The sample task is <strong>T-042 · Make webhook delivery idempotent</strong>. Forge hits a hard policy trigger (<code>schema / data migration</code>) at step 3 and asks where idempotency keys should live.</p>
 
   <h3>A · Terminal-native</h3>
-  <p><strong>Split:</strong> plan, decision, permission, review and attestation all live in the terminal.</p>
+  <p><strong>Split:</strong> plan, decision, permission, review and attestation all live in the terminal — as a chat with the agent, not a set of screens.</p>
   <ul>
-    <li><strong>Best at:</strong> zero context switch, SSH, speed, scriptability.</li>
-    <li><strong>Weak at:</strong> diff review, long rationale, annotation, evidence browsing.</li>
+    <li><strong>Surface:</strong> a session transcript with tool events, a persistent <code>you ›</code> input, and no product tabs. Decisions, review, and attestation arrive as messages in the same stream.</li>
+    <li><strong>Best at:</strong> zero context switch, SSH, speed, scriptability, and keeping the agent's work visible.</li>
+    <li><strong>Weak at:</strong> diff review is still a long scroll; long rationale and evidence browsing compete with the conversation.</li>
     <li><strong>Away:</strong> state is on disk; closing the terminal is safe. <code>forge resume T-042</code> reprints the pending gate. No timeout.</li>
-    <li><strong>Risk:</strong> the review becomes a pager, not a place to think.</li>
+    <li><strong>Risk:</strong> the chat becomes a wall of text, or the structured gates disappear into scrollback.</li>
+  </ul>
+
+  <h3>A chat controls</h3>
+  <ul>
+    <li><code>/help</code> · <code>/status</code> · <code>/pause</code> · <code>/resume</code> · <code>/review</code> · <code>/attest</code> · <code>/back</code></li>
+    <li><code>/diff</code> · <code>/decisions</code> · <code>/assumptions</code> · <code>/checks</code> · <code>/evidence</code></li>
+    <li><code>/defer</code> · <code>/delegate</code> · <code>/reject</code> · <code>/reopen</code> · <code>/stop</code></li>
+    <li>Enter sends; Shift+Enter adds a newline. Esc pauses when the input is not focused. The <code>? commands</code> link prints the list.</li>
+    <li>The model/context/cost line is a sample; provider choice is ticket #10.</li>
   </ul>
 
   <h3>B · Local web cockpit</h3>
@@ -1316,7 +1366,9 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, [tabindex]:fo
     reviewFile: 'all',
     railTab: 'decisions',
     chat: [],
+    reviewShown: [],
     scrollTo: null,
+    scrollBottom: false,
     openAnn: null,
     openCheck: null,
     modal: null,
@@ -1336,7 +1388,11 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, [tabindex]:fo
     try {
       const p = new URLSearchParams(location.search);
       const flow = p.get('flow');
-      if (['decision', 'review', 'attest'].includes(flow)) state.flow = flow;
+      if (['decision', 'review', 'attest'].includes(flow)) {
+        state.flow = flow;
+        if (flow === 'review') state.scrollTo = 'chat-review';
+        if (flow === 'attest') state.scrollTo = p.get('answered') === '1' ? 'chat-attest-final' : 'chat-attest';
+      }
       const choice = Number(p.get('choice')) || 1;
       if (p.get('choice') && p.get('decided') !== '1') {
         const option = DECISION.options.find(o => o.n === choice) || DECISION.options[0];
@@ -1383,6 +1439,8 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, [tabindex]:fo
         state.attestation.passed = true;
         state.done = true;
         state.flow = 'attest';
+        state.scrollTo = null;
+        state.scrollBottom = true;
         state.ledger.push({ kind: 'attestation', id: TASK.id, at: '14:12', text: 'Attested by ' + TASK.owner + ' (deep link).' });
       }
     } catch (_) { /* ignore malformed deep links */ }
@@ -1496,6 +1554,11 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, [tabindex]:fo
       const target = document.getElementById(state.scrollTo);
       if (target) target.scrollIntoView({ block: 'start', behavior: 'smooth' });
       state.scrollTo = null;
+      state.scrollBottom = false;
+    } else if (state.scrollBottom) {
+      const term = $('.term-screen');
+      if (term) term.scrollTop = term.scrollHeight;
+      state.scrollBottom = false;
     }
 
     renderDock();
@@ -1583,6 +1646,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, [tabindex]:fo
       ${renderATermBar()}
       ${renderAChatHead()}
       <div class="term-screen t-chat">${body}</div>
+      ${renderAActivity()}
       <div class="term-composer t-chat-composer">${renderAChatInput()}</div>
       <div class="term-foot">${renderATermFoot()}</div>
     </div></section>`;
@@ -1611,6 +1675,18 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, [tabindex]:fo
     </div>`;
   }
 
+  function renderAActivity() {
+    let text;
+    if (state.away) text = 'paused · waiting for you';
+    else if (state.done) text = 'done · branch unmerged';
+    else if (state.stopped) text = 'stopped · nothing merged';
+    else if (!canReview() && (state.flow === 'review' || state.flow === 'attest')) text = 'locked · waiting on D-3';
+    else if (state.flow === 'decision') text = state.decision.status === 'resolved' ? 'waiting for you · type review' : 'waiting for a decision · D-3';
+    else if (state.flow === 'review') text = 'waiting for review · 5 checks green';
+    else text = allPassed() ? 'waiting for attestation' : `waiting for your answer · Q${Math.min(state.attestation.qIndex + 1, 3)}/3`;
+    return `<div class="t-activity"><span class="t-green">forge</span><span>${esc(text)}</span><span class="t-dim">· model configured · 18.4k ctx · $0.12</span><span class="t-dim">esc pause</span></div>`;
+  }
+
   function renderATermFoot() {
     if (state.away) return `<span>forge · ${TASK.id}</span><span>waiting · no timeout</span><span>← → switch variant</span>`;
     if (state.done) return `<span>forge · ${TASK.id}</span><span>done · branch unmerged</span><span>← → switch variant</span>`;
@@ -1630,19 +1706,23 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, [tabindex]:fo
   }
 
   function renderChatMsg(m) {
-    return chatMsg(m.role, m.text, m.time || 'now');
+    return chatMsg(m.role, m.text, m.time || 'now', m.html || '');
   }
 
   function renderSeed(flow) {
     let out = chatMsg('forge', 'Session started on forge/T-042 from a1b2c3d. I read AGENTS.md, package.json, and the webhook handler.', '14:02');
-    out += chatMsg('tool', 'read src/webhooks/handler.ts · read db/migrations/ · read test/webhooks/', '14:04');
+    out += chatMsg('tool', 'read AGENTS.md · package.json · tsconfig.json · src/webhooks/handler.ts (62 lines)', '14:04');
+    out += chatMsg('tool', 'grep "handleWebhook|charge(" src/ — 6 matches in 3 files', '14:04');
     if (flow === 'decision') {
       out += chatMsg('forge', 'Plan v2 approved. Full risk: step 3 touches a schema/data migration. I am on step 3 of 6.', '14:05');
       out += chatMsg('forge', 'I stopped before the first migration write because D-3 is a blocking decision.', '14:06');
     } else {
       out += chatMsg('forge', 'Plan v2 approved. I recorded D-3, wrote the migration and handler, and ran the checks.', '14:07');
-      out += chatMsg('tool', 'edited db/migrations/0032_webhook_events.sql · src/webhooks/events.ts · src/webhooks/handler.ts', '14:08');
-      out += chatMsg('tool', 'ran pnpm test — 42 passed · pnpm build — clean · forge migrate:check — up/down clean · pnpm lint — clean', '14:41');
+      out += chatMsg('tool', 'edited db/migrations/0032_webhook_events.sql +7 −0 · src/webhooks/events.ts +22 −0 · src/webhooks/handler.ts +14 −6', '14:08');
+      out += chatMsg('tool', 'edited test/webhooks/idempotency.test.ts +72 −0', '14:09');
+      out += chatMsg('tool', 'ran pnpm test — 42 passed (12 targeted) · pnpm build — clean', '14:38');
+      out += chatMsg('tool', 'ran forge migrate:check — up/down clean · pnpm lint — clean', '14:40');
+      out += chatMsg('tool', 'ran stripe trigger payment_intent.succeeded — 1 charge · 1 duplicate', '14:41');
     }
     if (flow === 'attest') out += chatMsg('forge', 'Review is done. Three questions before I can call this done.', '14:44');
     return out;
@@ -1685,7 +1765,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, [tabindex]:fo
       <textarea data-bind="chat" rows="1" ${disabled ? 'disabled' : ''} placeholder="${esc(hint)}" aria-label="Message Forge"></textarea>
       <button class="t-btn t-btn-primary t-chat-send" data-action="chat-send" ${disabled ? 'disabled' : ''}>send ↵</button>
     </div>
-    <div class="t-chat-hint"><span>${disabled ? 'session paused' : 'type a message or command'}</span><span>Enter sends · Shift+Enter newline</span></div>`;
+    <div class="t-chat-hint"><span>${disabled ? 'session paused' : 'type a message or command'}</span><span><button class="t-link" data-action="chat-help">? commands</button> · Enter sends · Shift+Enter newline</span></div>`;
   }
 
   function chatHint() {
@@ -1722,53 +1802,36 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, [tabindex]:fo
 
   function renderDecisionCard() {
     const d = state.decision;
-    return `<div class="t-card">
-      <div class="t-card-head"><span class="t-amber">DECISION ${DECISION.id}</span><span class="t-dim">blocked ${WAIT}</span></div>
-      <h3 class="t-title">${esc(DECISION.title)}</h3>
-      <div class="t-meta"><span class="t-chip t-chip-warn">trigger: ${esc(DECISION.trigger)}</span><span class="t-chip">${esc(DECISION.policy)}</span><span class="t-chip">step ${esc(TASK.step)}</span></div>
-      ${d.evidenceReturned ? `<div class="t-feedback"><b>Forge returned with evidence</b><p>Redis is a managed service with a new failure mode; the Postgres path is one reversible migration. The recommendation did not change. The decision is still yours.</p></div>` : ''}
-      <p class="t-p">${esc(DECISION.why)}</p>
-      <p class="t-p t-dim">${esc(DECISION.context)}</p>
-      <div class="t-options">${DECISION.options.map(optionA).join('')}</div>
-      <div class="t-facts">
-        <div><span>recommendation</span><span>1 — Postgres table</span></div>
-        <div><span>reversibility</span><span>${esc(DECISION.reversibility)}</span></div>
-        <div><span>blast radius</span><span>${esc(DECISION.blast)}</span></div>
-        <div class="t-warn"><span>default</span><span>${esc(DECISION.default)}</span></div>
-      </div>
-      <div class="t-actions">
-        <button class="t-btn" data-action="modal" data-modal="defer">d · defer</button>
-        <button class="t-btn" data-action="modal" data-modal="delegate">g · delegate</button>
-        <button class="t-btn t-btn-danger" data-action="modal" data-modal="reject">x · reject</button>
-        <span class="t-dim">or type a command in the chat</span>
-      </div>
+    return `<div class="t-decision-chat">
+      <div class="t-receipt-head"><span class="t-amber">D-3 · decision</span><span class="t-dim">${esc(DECISION.trigger)} · ${esc(DECISION.policy.split(' · ')[0])} · blocked ${WAIT}</span></div>
+      <p class="t-decision-q">${esc(DECISION.title)}</p>
+      <p class="t-decision-lede">${esc(DECISION.why)}</p>
+      <p class="t-decision-context">${esc(DECISION.context)}</p>
+      ${d.evidenceReturned ? `<p class="t-decision-context t-amber">Forge returned: Redis adds a service and a failure mode; Postgres is one reversible migration. The recommendation did not change.</p>` : ''}
+      <div class="t-decision-options">${DECISION.options.map(optionA).join('')}</div>
+      <div class="t-decision-meta"><b>recommended 1 · Postgres table</b> · reversible · down migration · blast ${esc(DECISION.blast)} · <span class="t-amber">default none</span></div>
+      <div class="t-decision-hint">Reply 1–3, or type defer / delegate / reject.</div>
     </div>`;
   }
 
   function optionA(o) {
     const sel = state.decision.choice === o.n;
-    return `<button class="t-opt" data-action="choose" data-choice="${o.n}" aria-pressed="${sel}">
-      <span class="t-key">[${o.n}]</span>
-      <span class="t-opt-main">
-        <span class="t-opt-title">${esc(o.title)}${o.recommended ? ' <em>★ recommended</em>' : ''}</span>
-        <span class="t-opt-sub">${esc(o.sub)} — ${esc(o.summary)}</span>
-        <span class="t-opt-chips">${o.chips.map(c => `<span class="t-opt-chip">${esc(c)}</span>`).join('')}</span>
-        ${sel ? `<span class="t-opt-sub" style="margin-top:4px;color:#e8d5aa">${esc(o.consequence)}</span>` : ''}
-      </span>
+    return `<button class="t-decision-row" data-action="choose" data-choice="${o.n}" aria-pressed="${sel}">
+      <span class="t-decision-key">[${o.n}]</span>
+      <span class="t-decision-opt"><b>${esc(o.title)}</b> — ${esc(o.summary)}${o.recommended ? ' <em>recommended</em>' : ''}<span class="t-decision-chips">${o.chips.map(esc).join(' · ')}</span>${sel ? `<span class="t-decision-consequence">${esc(o.consequence)}</span>` : ''}</span>
     </button>`;
   }
 
   function renderReceiptCard() {
     const d = state.decision;
     const o = currentOption();
-    return `<div class="t-card t-card-ok">
-      <div class="t-card-head"><span class="t-green">✓ DECISION RECORDED</span><span class="t-dim">${esc(d.recordedAt || '14:06')} · execution resumed</span></div>
-      <div class="t-record"><span>chosen</span><span>${esc(o ? o.title : '—')}</span></div>
-      <div class="t-record"><span>your words</span><blockquote>“${esc(d.rationale)}”</blockquote></div>
-      <div class="t-record"><span>ledger</span><span>${LEDGER_PATH} <span class="t-dim">· human-authored</span></span></div>
-      <div class="t-record"><span>next</span><span class="t-dim">step 3 resumed; targeted checks, then full verification</span></div>
-      <div class="t-actions"><button class="t-btn t-btn-primary" data-action="flow" data-flow="review">v · review →</button><button class="t-btn" data-action="reopen-decision">reopen (prototype)</button></div>
-      ${d.choice !== 1 ? `<div class="t-sim">prototype: the diff renders the Postgres path; your choice (${esc(o ? o.title : '—')}) is recorded in state.</div>` : ''}
+    return `<div class="t-receipt-chat">
+      <div class="t-receipt-head"><span class="t-green">✓ DECISION RECORDED</span><span class="t-dim">${esc(d.recordedAt || '14:06')} · step 3 resumed</span></div>
+      <div class="t-receipt-line"><b>${esc(o ? o.title : '—')}</b> — ${esc(o ? o.summary : '')}</div>
+      <blockquote class="t-receipt-quote">“${esc(d.rationale)}”</blockquote>
+      <div class="t-receipt-meta">${LEDGER_PATH} · human-authored · Forge will not rewrite it</div>
+      <div class="t-receipt-actions">type review for the packet <button class="t-link" data-action="flow" data-flow="review">review</button><button class="t-link" data-action="reopen-decision">reopen</button></div>
+      ${d.choice !== 1 ? `<div class="t-decision-hint">prototype: the diff renders the Postgres path; your choice (${esc(o ? o.title : '—')}) is recorded in state.</div>` : ''}
     </div>`;
   }
 
@@ -1779,32 +1842,20 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, [tabindex]:fo
       : d.status === 'delegated'
         ? { head: 'DELEGATED FOR ANALYSIS', title: 'The decision is still yours.', body: 'I will return with evidence and ask again. I will not choose for you.', label: 'scope', value: d.delegateScope || 'research the options' }
         : { head: 'SENT BACK TO PLANNING', title: 'The decision went back to planning.', body: 'Execution is blocked until the plan is revised and approved.', label: 'reason', value: d.rejectReason || 'not needed for this task' };
-    return `<div class="t-card t-card-lock">
-      <div class="t-card-head"><span class="t-amber">${copy.head}</span><span class="t-dim">gate pending</span></div>
-      <h3 class="t-title">${copy.title}</h3>
-      <p class="t-p">${copy.body}</p>
-      <div class="t-record"><span>${copy.label}</span><span>${esc(copy.value)}</span></div>
-      ${d.deferNote || d.delegateNote || d.rejectNote ? `<div class="t-record"><span>note</span><span>${esc(d.deferNote || d.delegateNote || d.rejectNote)}</span></div>` : ''}
-      <div class="t-actions">
-        ${d.status === 'delegated' ? `<button class="t-btn t-btn-primary" data-action="forge-returns">Forge returns with evidence</button>` : ''}
-        <button class="t-btn" data-action="reopen-decision">reopen (prototype)</button>
-      </div>
+    return `<div class="t-parked-chat">
+      <div class="t-receipt-head"><span class="t-amber">${copy.head}</span><span class="t-dim">gate pending</span></div>
+      <p class="t-decision-lede">${copy.body}</p>
+      <div class="t-decision-meta"><span>${copy.label}: ${esc(copy.value)}</span>${d.deferNote || d.delegateNote || d.rejectNote ? `<span>note: ${esc(d.deferNote || d.delegateNote || d.rejectNote)}</span>` : ''}<span>review locked</span></div>
+      <div class="t-receipt-actions">type reopen to pick it back up ${d.status === 'delegated' ? `<button class="t-link" data-action="forge-returns">Forge returns</button>` : ''}<button class="t-link" data-action="reopen-decision">reopen</button></div>
     </div>`;
   }
 
   function renderReviewPacket() {
-    const files = DIFF.filter(l => l.t === 'file');
-    return `${chatMsg('forge', 'Verification is green. Here is the review packet: 4 files, +142 −6, 5 checks. Decisions are marked in the diff.', '14:43', renderDiffCard(files))}
-      ${chatMsg('forge', 'Decision map', '14:43', `<div id="chat-decisions">${renderAMap()}</div>`)}
-      ${chatMsg('forge', 'Assumptions', '14:43', `<div id="chat-assumptions">${renderAAssumptions()}</div>`)}
-      ${chatMsg('forge', 'Checks', '14:43', `<div id="chat-checks">${renderAChecks()}</div>`)}
-      ${chatMsg('forge', 'If this is right, type attest. You can ask me about any decision first.', '14:43')}`;
-  }
-
-  function renderDiffCard(files) {
-    return `<div class="t-chat-files">${files.map(f => `<span>${esc(f.text)} <b>${esc(f.stat || '')}</b></span>`).join('')}</div>
-      <div id="chat-diff" class="t-chat-diff">${renderDiffLines(DIFF)}</div>
-      ${state.openAnn ? renderAnnPanel(state.openAnn, 't-ann-panel') : ''}`;
+    const core = diffForFile('src/webhooks/handler.ts');
+    return chatMsg('forge', 'Verification is green. Review packet: 4 files, +142 −6, 5 checks. The core change is in handler.ts — claim the delivery before charging it.', '14:43', `<div id="chat-review"></div><div class="t-review-core">${renderDiffLines(core)}</div>
+      <div class="t-review-meta">D-1 scope · D-2 7-day window · D-3 Postgres · D-4 no backfill (deferred) · 4 assumptions</div>
+      <div class="t-review-hint">Type diff for the full diff, decisions, assumptions, checks, or attest.</div>
+      ${state.openAnn ? renderAnnPanel(state.openAnn, 't-ann-panel') : ''}`);
   }
 
   function diffForFile(file) {
@@ -1877,85 +1928,71 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, [tabindex]:fo
     if (!q) return renderFinalCard();
     const grade = a.grades[i];
     const fail = a.failures[i];
-    return chatMsg('forge', '', '14:44', `<div class="t-card">
-      <div class="t-card-head"><span class="t-amber">ATTESTATION ${q.n}/3</span><span class="t-dim">answers recorded verbatim</span></div>
+    return chatMsg('forge', '', '14:44', `<div class="t-attest-chat" id="chat-attest">
+      <div class="t-receipt-head"><span class="t-amber">ATTESTATION ${q.n}/3</span><span class="t-dim">answers recorded verbatim</span></div>
       <div class="t-progress">${QUESTIONS.map((qq, j) => {
         const g = a.grades[j];
         return `<span class="${g === 'strong' ? 'done' : j === i ? '' : 't-dim'}">${g === 'strong' ? '✓' : j === i ? '●' : '○'} Q${qq.n}</span>`;
       }).join(' · ')}</div>
-      <h3 class="t-title">${esc(q.text)}</h3>
-      <div class="t-meta"><span class="t-chip">evidence: ${esc(q.evidence)}</span><span class="t-chip">${fail} failed ${fail === 1 ? 'attempt' : 'attempts'}</span></div>
-      <p class="t-dim" style="margin:8px 0 0">This checks the reasoning behind ${DECISION.id}, not whether you remember the diff.</p>
+      <p class="t-attest-q">${esc(q.text)}</p>
+      <div class="t-attest-evidence" id="chat-evidence">
+        <span>evidence · ${esc(q.evidence)}</span>
+        ${a.evidenceOpen[i] ? `<pre class="t-pre">${esc(q.evidenceText)}</pre>` : `<button class="t-link" data-action="evidence" data-q="${i}">show full evidence</button>`}
+      </div>
       ${grade === 'vague' ? `<div class="t-feedback"><b>not yet</b><p>${esc(q.vagueFeedback)}</p></div>` : ''}
       ${grade === 'wrong' ? `<div class="t-feedback bad"><b>not yet</b><p>${esc(q.wrongFeedback)}</p></div>` : ''}
       ${a.explainOpen[i] ? `<div class="t-feedback"><b>Forge explains</b><p>${esc(q.explain)}</p></div>` : ''}
-      <div id="chat-evidence" class="t-chat-evidence">
-        <div class="t-side-head">evidence</div>
-        <p>${esc(ANNOTATIONS['D-3'].text)}</p>
-        <pre class="t-pre">${esc(q.evidenceText)}</pre>
-      </div>
       ${fail >= 2 ? `<div class="t-feedback bad"><b>still not attestable</b><p>Two failed attempts. Ask me to explain, or stop. Nothing merges without this.</p>
         <div class="t-actions">
           <button class="t-btn" data-action="explain" data-q="${i}">ask Forge to explain</button>
           <button class="t-btn t-btn-danger" data-action="stop-attest">stop — I cannot attest</button>
         </div></div>` : ''}
       <div class="t-sim"><span>prototype:</span>${['strong', 'vague', 'wrong'].map(k => `<button data-action="simulate-answer" data-q="${i}" data-kind="${k}">${k}</button>`).join('')}</div>
+      <div class="t-decision-hint">This checks the reasoning behind ${DECISION.id}, not whether you remember the diff.</div>
     </div>`);
   }
 
   function renderFinalCard() {
     const a = state.attestation;
-    return chatMsg('forge', 'All three answers are recorded. Check the attestation box to finish.', '14:46', `<div class="t-card t-card-ok">
-      <div class="t-card-head"><span class="t-green">ALL THREE RECORDED</span><span class="t-dim">the human act</span></div>
-      <div class="t-map-list">
-        ${QUESTIONS.map((q, i) => `<div class="t-map-item resolved">
-          <div class="t-map-head"><span class="t-map-id">Q${q.n}</span><span>${esc(q.text)}</span></div>
-          <blockquote class="t-map-quote">“${esc(a.answers[i])}”</blockquote>
-        </div>`).join('')}
-      </div>
+    return chatMsg('forge', '', '14:46', `<div class="t-attest-final-chat" id="chat-attest-final">
+      <div class="t-receipt-head"><span class="t-green">ALL THREE RECORDED</span><span class="t-dim">the human act</span></div>
+      <p class="t-decision-lede">Your answers are in the transcript above. The agent cannot check this box for you.</p>
       <button class="t-checkbox" data-action="toggle-final" aria-pressed="${a.finalChecked}">${a.finalChecked ? '[x]' : '[ ]'} I attest that these are my words and I understand this change.</button>
       <div class="t-actions"><button class="t-btn t-btn-primary" data-action="attest-final" ${a.finalChecked ? '' : 'disabled'}>record attestation · done</button><span class="t-dim">merge remains yours</span></div>
     </div>`);
   }
 
   function renderStoppedCard() {
-    return chatMsg('forge', 'You stopped the attestation. Nothing merged.', 'now', `<div class="t-card t-stopped">
-      <div class="t-card-head"><span class="t-red">${TASK.id} STOPPED</span><span class="t-dim">attestation incomplete</span></div>
-      <p class="t-p">The task is stopped, not done. Read the decision record or ask for a walkthrough, then reopen the review.</p>
-      <div class="t-record"><span>branch</span><span>${esc(TASK.branch)} — unmerged</span></div>
-      <div class="t-record"><span>ledger</span><span>${DECISION.id} is recorded; attestation is not</span></div>
-      <div class="t-actions"><button class="t-btn" data-action="reopen-attest">reopen review (prototype)</button><button class="t-btn" data-action="flow" data-flow="review">back to review</button></div>
+    return chatMsg('forge', 'You stopped the attestation. Nothing merged.', 'now', `<div class="t-parked-chat">
+      <div class="t-receipt-head"><span class="t-red">${TASK.id} STOPPED</span><span class="t-dim">attestation incomplete</span></div>
+      <p class="t-decision-lede">The task is stopped, not done. Read the decision record or ask for a walkthrough, then reopen the review.</p>
+      <div class="t-decision-meta"><span>${esc(TASK.branch)} — unmerged</span><span>${DECISION.id} recorded · attestation not recorded</span></div>
+      <div class="t-receipt-actions">type reopen to try again <button class="t-link" data-action="reopen-attest">reopen</button><button class="t-link" data-action="flow" data-flow="review">review</button></div>
     </div>`);
   }
 
   function renderLockedCard(what) {
-    return `<div class="t-card t-card-lock">
-      <div class="t-card-head"><span class="t-amber">${what.toUpperCase()} LOCKED</span><span class="t-dim">gate pending</span></div>
-      <p class="t-p">The ${what} is waiting on ${DECISION.id}. Resolve the decision first.</p>
-      <div class="t-actions"><button class="t-btn" data-action="flow" data-flow="decision">back to decision</button></div>
+    return `<div class="t-locked-chat">
+      <div class="t-receipt-head"><span class="t-amber">${what.toUpperCase()} LOCKED</span><span class="t-dim">gate pending</span></div>
+      <p class="t-decision-lede">The ${what} is waiting on ${DECISION.id}. Resolve the decision first.</p>
+      <div class="t-receipt-actions">type back to return <button class="t-link" data-action="flow" data-flow="decision">back</button></div>
     </div>`;
   }
 
   function renderAwayCard() {
-    return chatMsg('system', 'Waiting for you · 2h 14m · no timeout.', 'now', `<div class="t-card t-card-lock">
-      <div class="t-card-head"><span class="t-amber">WAITING FOR YOU</span><span class="t-dim">2h 14m</span></div>
-      <div class="t-record"><span>task</span><span>${TASK.id} · ${esc(TASK.title)}</span></div>
-      <div class="t-record"><span>state</span><span>decision — gate ${DECISION.id} pending</span></div>
-      <div class="t-record"><span>timeout</span><span>none; closing this terminal is safe</span></div>
-      <div class="t-record"><span>resume</span><span>forge resume ${TASK.id}</span></div>
-      <div class="t-actions"><button class="t-btn t-btn-primary" data-action="resume-away">resume where I left off</button></div>
+    return chatMsg('system', 'Waiting for you · 2h 14m · no timeout.', 'now', `<div class="t-parked-chat">
+      <div class="t-receipt-head"><span class="t-amber">WAITING FOR YOU</span><span class="t-dim">2h 14m</span></div>
+      <div class="t-decision-meta"><span>${TASK.id} · ${esc(TASK.title)}</span><span>decision — gate ${DECISION.id} pending</span><span>no timeout · closing this terminal is safe</span><span>forge resume ${TASK.id}</span></div>
+      <div class="t-receipt-actions"><button class="t-link" data-action="resume-away">resume where I left off</button></div>
     </div>`);
   }
 
   function renderDoneCard() {
-    return chatMsg('forge', 'Done. The branch is yours to merge; I did not merge it.', '14:12', `<div class="t-card t-card-ok">
-      <div class="t-card-head"><span class="t-green">✓ ${TASK.id} DONE</span><span class="t-dim">attested by ${esc(TASK.owner)} · 14:12</span></div>
+    return chatMsg('forge', 'Done. The branch is yours to merge; I did not merge it.', '14:12', `<div class="t-receipt-chat">
+      <div class="t-receipt-head"><span class="t-green">✓ ${TASK.id} DONE</span><span class="t-dim">attested by ${esc(TASK.owner)} · 14:12</span></div>
       <h3 class="t-title">Every decision is explainable.</h3>
-      <div class="t-record"><span>attestation</span><span>${ATTEST_PATH} · three answers, verbatim</span></div>
-      <div class="t-record"><span>ledger</span><span>${LEDGER_PATH}</span></div>
-      <div class="t-record"><span>branch</span><span>${esc(TASK.branch)} — unmerged</span></div>
-      <div class="t-record"><span>worktree</span><span>kept until merge; cleanup is never forced</span></div>
-      <div class="t-actions"><button class="t-btn" data-action="reset">start over (prototype)</button></div>
+      <div class="t-decision-meta"><span>${ATTEST_PATH} · three answers, verbatim</span><span>${LEDGER_PATH}</span><span>${esc(TASK.branch)} — unmerged</span><span>worktree kept until merge</span></div>
+      <div class="t-receipt-actions"><button class="t-link" data-action="reset">start over (prototype)</button></div>
     </div>`);
   }
 
@@ -2764,7 +2801,9 @@ resume   forge resume ${TASK.id}
     state.openAnn = null;
     state.modal = null;
     state.chat = [];
+    state.reviewShown = [];
     state.scrollTo = null;
+    state.scrollBottom = false;
     resetScroll = true;
     try {
       const url = new URL(location.href);
@@ -2786,7 +2825,9 @@ resume   forge resume ${TASK.id}
     state.modal = null;
     state.openAnn = null;
     state.chat = [];
-    state.scrollTo = null;
+    state.reviewShown = [];
+    state.scrollTo = flow === 'review' ? 'chat-review' : flow === 'attest' ? (allPassed() ? 'chat-attest-final' : 'chat-attest') : null;
+    state.scrollBottom = false;
     resetScroll = true;
     render();
   }
@@ -2864,11 +2905,25 @@ resume   forge resume ${TASK.id}
     if (!text) return;
     state.chat.push({ role: 'you', text, time: 'now' });
     handleChat(text);
+    state.scrollBottom = true;
     render();
   }
 
+  function sayHelp() {
+    say('Commands: 1–3 choose · a rationale records · defer / delegate / reject · review · attest · diff / decisions / assumptions / checks · evidence · stop / pause / resume / reopen · status');
+  }
+
+  function statusText() {
+    const gate = state.done ? '—' : state.decision.status === 'pending' ? 'D-3' : state.flow;
+    return `${TASK.id} · ${taskStateLabel()} · gate ${gate} · ${TASK.branch} · ${state.ledger.length} ledger ${state.ledger.length === 1 ? 'entry' : 'entries'} · model configured · 18.4k ctx`;
+  }
+
   function handleChat(text) {
-    const t = text.trim();
+    const t = text.trim().replace(/^\//, '');
+    if (/^help\b/i.test(t)) { sayHelp(); return; }
+    if (/^status\b/i.test(t)) { say(statusText()); return; }
+    if (/^pause\b/i.test(t)) { simulateAway(); return; }
+    if (/^resume\b/i.test(t)) { resumeAway(); return; }
     if (state.flow === 'decision') {
       const d = state.decision;
       if (d.status === 'resolved') {
@@ -2940,8 +2995,19 @@ resume   forge resume ${TASK.id}
       const section = /^(diff|decisions|assumptions|checks)\b/i.exec(t);
       if (section) {
         const key = section[1].toLowerCase();
-        say(`Here is the ${key}.`);
+        if (!state.reviewShown.includes(key)) {
+          state.reviewShown.push(key);
+          const html = key === 'diff'
+            ? `<div id="chat-diff" class="t-chat-diff">${renderDiffLines(DIFF)}</div>`
+            : key === 'decisions'
+              ? `<div id="chat-decisions">${renderAMap()}</div>`
+              : key === 'assumptions'
+                ? `<div id="chat-assumptions">${renderAAssumptions()}</div>`
+                : `<div id="chat-checks">${renderAChecks()}</div>`;
+          state.chat.push({ role: 'forge', text: `Here is the ${key}.`, html, time: 'now' });
+        }
         state.scrollTo = 'chat-' + key;
+        state.scrollBottom = false;
         return;
       }
       if (/redis|postgres|store|why/i.test(t)) {
@@ -2970,8 +3036,10 @@ resume   forge resume ${TASK.id}
     if (/^(back|b|review)\b/i.test(t)) { setFlow('review'); return; }
     if (/^(stop|s)\b/i.test(t)) { stopAttest(); return; }
     if (/^(evidence|e)\b/i.test(t)) {
-      say('The evidence is in the question above.');
+      const i = a.qIndex;
+      if (QUESTIONS[i]) a.evidenceOpen[i] = true;
       state.scrollTo = 'chat-evidence';
+      state.scrollBottom = false;
       return;
     }
     const i = a.qIndex;
@@ -3035,6 +3103,7 @@ resume   forge resume ${TASK.id}
       if (m === 'defer') say('D-3 is deferred. The task is paused; type reopen when you want to pick it back up.');
       else if (m === 'delegate') say('I will research the options and return with evidence. The decision is still yours.');
       else say('Sent back to planning. Execution is blocked until the plan is revised.');
+      state.scrollBottom = true;
     }
     state.modal = null;
     render();
@@ -3065,6 +3134,7 @@ resume   forge resume ${TASK.id}
     if (state.variant === 'A') {
       state.chat.push({ role: 'you', text: QUESTIONS[i][kind], time: 'now' });
       if (kind === 'strong') state.chat.push({ role: 'forge', text: 'Recorded verbatim.', time: 'now' });
+      state.scrollBottom = true;
     }
     render();
   }
@@ -3182,6 +3252,12 @@ resume   forge resume ${TASK.id}
         break;
       case 'attest-final': attestFinal(); break;
       case 'chat-send': sendChat(); break;
+      case 'chat-help':
+        state.chat.push({ role: 'you', text: '/help', time: 'now' });
+        sayHelp();
+        state.scrollBottom = true;
+        render();
+        break;
       case 'focus-room': {
         const target = document.querySelector('.c-stage textarea, .b-main textarea, .c-attest-final .c-check, .b-attest-final .b-check');
         if (target) {
@@ -3220,6 +3296,10 @@ resume   forge resume ${TASK.id}
     if (e.key === 'Escape') {
       if (state.modal) { state.modal = null; render(); return; }
       if (state.stateOpen || state.notesOpen) { state.stateOpen = false; state.notesOpen = false; render(); return; }
+      if (!e.target.closest('input, textarea, select, [contenteditable]') && !state.away && !state.done && !state.stopped) {
+        simulateAway();
+        return;
+      }
     }
     if (e.target.closest('input, textarea, select, [contenteditable]')) return;
     if (e.metaKey || e.ctrlKey || e.altKey) return;
