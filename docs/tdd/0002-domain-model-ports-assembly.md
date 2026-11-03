@@ -3178,6 +3178,7 @@ The mapping below is the acceptance evidence for this TDD. Every test name follo
 | INV-02 — one open branch | `application::given_open_task_branch_when_starting_task_then_refused` | application |
 | INV-03 — pending requests not in ledger | `application::given_pending_decision_when_recorded_then_ledger_untouched` | application |
 | INV-04 — verbatim human rationale | `application::given_agent_authored_rationale_when_submitted_then_rejected` | application |
+| INV-05 — host-owned writes | `application::given_worker_capability_when_writing_control_path_then_denied` | application |
 | INV-06 — human attestation | `application::given_agent_attempt_when_attesting_then_rejected` | application |
 | INV-07 — `C2^ == C` | `application::given_attestation_commit_when_parent_is_not_subject_then_merge_refused` | application |
 | INV-08 — merge only through Forge | `application::given_unattested_branch_when_merging_then_refused` | application |
