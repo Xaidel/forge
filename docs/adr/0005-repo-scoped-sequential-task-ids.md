@@ -47,4 +47,4 @@ A UUID would be globally unique but unreadable in paths and transcripts. A date-
 - [Define the domain model, ports, and application assembly (TDD-0002)](https://github.com/Xaidel/forge/issues/21)
 - `docs/PRD.md` §5.1, §7.2 FR-PLAN-001, §7.7 FR-REV-010, §9.1, D-09
 - [TDD-0002](../tdd/0002-domain-model-ports-assembly.md) §5.2, §6.2, §7.2
-- [TDD-0003](../tdd/0003-session-state-events-resume.md) — counter storage and session layout
+- [TDD-0003](https://github.com/Xaidel/forge/issues/28) — counter storage and session layout

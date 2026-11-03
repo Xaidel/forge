@@ -3073,7 +3073,7 @@ pub fn build_application(ports: ApplicationPorts) -> Application;
 
 `build_application` is pure wiring: it clones `Arc`s, constructs each use case, and returns `Application`. It performs no I/O, reads no environment, and cannot fail. All ports are mandatory. There is no service locator, no optional port, and no adapter construction.
 
-`Application` is defined in `ports::application` and re-exported as `app_core::ports::Application`. It is the only public object that holds capabilities. It is `Send + Sync` because every field is `Arc<dyn Trait + Send + Sync>`. `ports.rs` re-exports only `ApplicationPorts` and `build_application` from `assembly`, preserving DEP-11.
+`Application` is defined in `ports::application` and re-exported as `app_core::ports::Application`. It is the only public object that holds capabilities. It is `Send + Sync` because every field is `Arc<dyn Trait + Send + Sync>`. `ports.rs` re-exports only `ApplicationPorts` and `build_application` from `assembly`, preserving DEP-11. `Application`'s fields are `pub(crate)` so `assembly` can construct it; the public surface is the accessors.
 
 ### 9.4 Gate lifecycle in the core
 
