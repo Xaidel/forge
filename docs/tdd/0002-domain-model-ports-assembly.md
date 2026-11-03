@@ -3032,22 +3032,22 @@ pub struct ApplicationPorts {
 
 // ports/application.rs
 pub struct Application {
-    start_task: Arc<dyn StartTask + Send + Sync>,
-    resume_task: Arc<dyn ResumeTask + Send + Sync>,
-    retry_task: Arc<dyn RetryTask + Send + Sync>,
-    pause_task: Arc<dyn PauseTask + Send + Sync>,
-    cancel_task: Arc<dyn CancelTask + Send + Sync>,
-    reopen_task: Arc<dyn ReopenTask + Send + Sync>,
-    merge_task: Arc<dyn MergeTask + Send + Sync>,
-    override_merge: Arc<dyn OverrideMerge + Send + Sync>,
-    answer_gate: Arc<dyn AnswerGate + Send + Sync>,
-    open_review: Arc<dyn OpenReview + Send + Sync>,
-    attest_task: Arc<dyn AttestTask + Send + Sync>,
-    switch_model: Arc<dyn SwitchModel + Send + Sync>,
-    increase_budget: Arc<dyn IncreaseBudget + Send + Sync>,
-    query_status: Arc<dyn QueryStatus + Send + Sync>,
-    query_transcript: Arc<dyn QueryTranscript + Send + Sync>,
-    query_audit: Arc<dyn QueryAudit + Send + Sync>,
+    pub(crate) start_task: Arc<dyn StartTask + Send + Sync>,
+    pub(crate) resume_task: Arc<dyn ResumeTask + Send + Sync>,
+    pub(crate) retry_task: Arc<dyn RetryTask + Send + Sync>,
+    pub(crate) pause_task: Arc<dyn PauseTask + Send + Sync>,
+    pub(crate) cancel_task: Arc<dyn CancelTask + Send + Sync>,
+    pub(crate) reopen_task: Arc<dyn ReopenTask + Send + Sync>,
+    pub(crate) merge_task: Arc<dyn MergeTask + Send + Sync>,
+    pub(crate) override_merge: Arc<dyn OverrideMerge + Send + Sync>,
+    pub(crate) answer_gate: Arc<dyn AnswerGate + Send + Sync>,
+    pub(crate) open_review: Arc<dyn OpenReview + Send + Sync>,
+    pub(crate) attest_task: Arc<dyn AttestTask + Send + Sync>,
+    pub(crate) switch_model: Arc<dyn SwitchModel + Send + Sync>,
+    pub(crate) increase_budget: Arc<dyn IncreaseBudget + Send + Sync>,
+    pub(crate) query_status: Arc<dyn QueryStatus + Send + Sync>,
+    pub(crate) query_transcript: Arc<dyn QueryTranscript + Send + Sync>,
+    pub(crate) query_audit: Arc<dyn QueryAudit + Send + Sync>,
 }
 
 impl Application {
