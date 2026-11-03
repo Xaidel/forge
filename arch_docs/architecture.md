@@ -309,7 +309,7 @@ Naming follows [naming-conventions.md](naming-conventions.md): `*Snapshot` for p
 ### 9.2 Error boundary
 
 - `domain` uses `thiserror` for `DomainError`; it never leaks into a public signature.
-- `ports` owns the stable public error categories (`SessionError`, `LedgerError`, `GitError`, `ModelError`, `SandboxError`, `PolicyError`, `AttestationError`, `ConfigError`, `TerminalError`, `ApplicationError`, `DomainError` as a public category).
+- `ports` owns the stable public error categories (`SessionError`, `LedgerError`, `GitError`, `ModelError`, `SandboxError`, `PolicyError`, `AttestationError`, `ConfigError`, `AuditError`, `IdSourceError`, `ApplicationError`, `DomainError` as a public category). `TerminalError` belongs to `infra_local::tui`; the core never renders, so a terminal error never crosses a port.
 - `application` maps `DomainError` and port errors into public application/port error categories.
 - `infra_local` may use `anyhow` internally for diagnostics, but `anyhow::Error` and `Box<dyn Error>` never cross a port.
 - Public error enums are `#[non_exhaustive]` so new categories can be added without a breaking change.
