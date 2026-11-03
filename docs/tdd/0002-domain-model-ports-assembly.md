@@ -597,7 +597,7 @@ The domain enforces every invariant that does not require I/O. The application a
 
 | Invariant | Core enforcement |
 |---|---|
-| INV-01 one active task per repo | `SessionStorePort::acquire_lock`; `Task::start` requires the lock token |
+| INV-01 one active task per repo | `StartTaskUseCase` acquires `SessionStorePort::acquire_lock` before constructing the task; `Task::start` is only called by that use case |
 | INV-02 one open task branch per repo | `StartTaskUseCase` checks the lock and branch before `GitPort::create_worktree` |
 | INV-03 pending requests never enter the ledger | `Task::open_gate` stores `Gate`; only `Task::record_decision` produces a `DecisionRecord` |
 | INV-04 rationale is human-authored and verbatim | `DecisionAnswer::Choose` requires a non-empty `rationale` and `RationaleProvenance.author`; `DomainError::RationaleAuthoredByAgent` rejects agent provenance |
@@ -614,9 +614,9 @@ The domain enforces every invariant that does not require I/O. The application a
 | INV-15 ledger substance is immutable | `DecisionRecord::rationale` and chosen option are immutable; corrections are `Erratum` or `supersedes` |
 | INV-16 newer schema is read-only | Every `*Snapshot` and `*Record` carries `schema_version`; adapters return `SchemaTooNew` |
 | INV-17 one repo per session | `TaskSnapshot.base_ref` and `repo_root` are fixed at intake; no cross-repo API exists |
-| INV-18 no evidence means no `verified` | `Task::record_verification` rejects an empty `evidence` list for a required check |
-| INV-19 unknown usage is explicit | `Usage` uses `Option<u64>` for cache and reasoning tokens; `CostEstimate` uses `Option<UsdMicros>` |
-| INV-20 no telemetry, secrets, reasoning, or customer data in commits | `LedgerPort` and `AttestationPort` reject a record that fails the secret-scan hook; no network capability exists in the core |
+| INV-18 no evidence means no `verified` | `Task::record_verification` requires a non-empty `evidence_ref` and `tree_hash`; `Task` refuses `Review` when a required criterion has no evidence |
+| INV-19 unknown usage is explicit | `Usage` uses `Option<u64>` for cache and reasoning tokens; any cost record added by TDD-0007 uses `Option<UsdMicros>` and never zero for unknown |
+| INV-20 no telemetry, secrets, reasoning, or customer data in commits | The `LedgerPort` and `AttestationPort` adapters run the secret scan before writing; the core records only redacted excerpts and never stores raw model reasoning in a committed record |
 
 ---
 
@@ -793,6 +793,7 @@ pub struct SessionSnapshot {
     pub task: TaskSnapshot,
     pub plan: Option<PlanSnapshot>,
     pub gates: Vec<Gate>,
+    pub assumptions: Vec<AssumptionSnapshot>,
     pub sequence: EventSequence,
 }
 
@@ -841,7 +842,7 @@ pub struct EvidenceArtifact {
 }
 ```
 
-`TaskSnapshot` is the durable projection. `SessionSnapshot` adds the active plan, open gates, and the event sequence. `TaskProgress` is the standard response for lifecycle capabilities.
+`TaskSnapshot` is the durable projection. `SessionSnapshot` adds the active plan, open gates, open assumptions, and the event sequence. `TaskProgress` is the standard response for lifecycle capabilities.
 
 ### 6.4 Plan
 
@@ -1501,7 +1502,7 @@ pub struct Trailer {
 pub struct MergeResult {
     pub merge_commit: CommitSha,
     pub subject_commit: CommitSha,
-    pub attestation_commit: CommitSha,
+    pub attestation_commit: Option<CommitSha>,
     pub base_before: CommitSha,
     pub base_after: CommitSha,
     pub trailers: Vec<Trailer>,
@@ -1539,8 +1540,8 @@ pub enum DecisionStatus {
     Deprecated,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum RefKind { Task, Plan, Commit, Diff, File, Issue, Adr, Url }
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub enum RefKind { Task, Plan, Commit, Diff, File, Issue, Adr, Url, Unknown(String) }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TypedRef {
@@ -2994,7 +2995,7 @@ Each use case is `pub(crate)`, implements exactly one inbound trait, and is neve
 `application::mapping` is the only module that converts between private domain types and public port records. It provides:
 
 - `TaskSnapshot -> Task` and `Task -> TaskSnapshot`
-- `SessionSnapshot -> (Task, Option<Plan>, Vec<Gate>)` and the inverse
+- `SessionSnapshot -> (Task, Option<Plan>, Vec<Gate>, Vec<Assumption>)` and the inverse
 - `PlanSnapshot -> Plan` and `Plan -> PlanSnapshot`
 - `DecisionRecord -> Decision` and `Decision -> DecisionRecord`
 - `AssumptionRecord -> Assumption` and `Assumption -> AssumptionRecord`
