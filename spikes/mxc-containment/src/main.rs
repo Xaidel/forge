@@ -98,18 +98,12 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let worker_env = worker_environment(&worktree, &home, &temp);
     println!("worker env keys: {:?}", worker_env.iter().map(|(k, _)| k).collect::<Vec<_>>());
 
-    let mut filesystem = FilesystemPolicy {
+    let filesystem = FilesystemPolicy {
         readwrite_paths: vec![path_string(&worktree)],
         readonly_paths: readonly_paths(),
         denied_paths: vec![path_string(&outside), path_string(&credentials)],
         clear_policy_on_exit: Some(true),
     };
-    // Some backends reject deniedPaths rather than ignoring it. Keep the
-    // explicit deny when the host advertises it, and rely on default-deny
-    // otherwise.
-    if !backend_supports_denied_paths() {
-        filesystem.denied_paths.clear();
-    }
 
     let command = canary_command(
         &canary_path,
@@ -124,6 +118,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     println!("readonly_paths: {:?}", filesystem.readonly_paths);
     println!("denied_paths: {:?}", filesystem.denied_paths);
 
+    println!("containment: Process (native default)");
     let request = ContainerRequest {
         containment: Containment::Process,
         filesystem: Some(filesystem),
@@ -230,15 +225,6 @@ fn platform_name() -> &'static str {
 
 fn path_string(path: &Path) -> String {
     path.to_string_lossy().into_owned()
-}
-
-fn backend_supports_denied_paths() -> bool {
-    v1::available_backends().iter().any(|backend| {
-        backend
-            .capabilities
-            .iter()
-            .any(|capability| format!("{capability:?}").contains("FilesystemDeniedPaths"))
-    })
 }
 
 fn readonly_paths() -> Vec<String> {

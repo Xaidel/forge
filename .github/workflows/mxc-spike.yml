@@ -62,7 +62,9 @@ jobs:
         working-directory: spikes/mxc-containment
         run: cargo build --release --bins
 
-      - name: Run canaries
+      - name: Run canaries (stock host)
+        id: stock
+        continue-on-error: ${{ runner.os == 'Linux' }}
         working-directory: spikes/mxc-containment
         shell: bash
         env:
@@ -73,12 +75,43 @@ jobs:
           set -o pipefail
           ./target/release/mxc-spike 2>&1 | tee "evidence-${LABEL}.log"
 
+      - name: Linux user-namespace diagnostics
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -x
+          sudo aa-status || true
+          dpkg -L bubblewrap | grep -i apparmor || true
+          ls -l /etc/apparmor.d | grep -i bwrap || true
+          cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns
+          unshare --user --net true || echo "unshare failed with $?"
+
+      - name: Allow unprivileged user namespaces
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -x
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          unshare --user --net true
+
+      - name: Run canaries (user namespaces allowed)
+        if: runner.os == 'Linux'
+        working-directory: spikes/mxc-containment
+        shell: bash
+        env:
+          FORGE_SPIKE_HOST_SECRET: leak-me
+          ANTHROPIC_API_KEY: sk-ant-spike-should-not-leak
+          LABEL: ${{ matrix.label }}
+        run: |
+          set -o pipefail
+          ./target/release/mxc-spike 2>&1 | tee "evidence-${LABEL}-userns-allowed.log"
+
       - name: Upload evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: mxc-spike-${{ matrix.label }}
           path: |
-            spikes/mxc-containment/evidence-${{ matrix.label }}.log
+            spikes/mxc-containment/evidence-*.log
             spikes/mxc-containment/target/release/mxc-spike-run/**
           if-no-files-found: warn
