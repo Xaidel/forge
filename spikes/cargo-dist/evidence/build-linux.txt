@@ -1,0 +1,6 @@
+announcing v0.1.0
+  forge-harness 0.1.0
+    forge-harness-x86_64-unknown-linux-gnu.tar.xz
+      [bin] forge
+      [misc] LICENSE, README.md
+      [checksum] forge-harness-x86_64-unknown-linux-gnu.tar.xz.sha256

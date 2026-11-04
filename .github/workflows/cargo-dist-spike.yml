@@ -6,9 +6,6 @@ name: cargo-dist release spike
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - spike/cargo-dist
 
 permissions:
   contents: read
@@ -327,7 +324,7 @@ jobs:
             foreach ($name in @('node.cmd','npm.cmd','npx.cmd','bun.cmd')) {
               Set-Content -Path (Join-Path $shim $name) -Value "@echo $name %* >> `"$env:RUNNER_TEMP\node-calls.log`"`r`n@exit /b 127"
             }
-            Set-Content -Path (Join-Path $env:RUNNER_TEMP 'node-calls.log') -Value ''
+            [System.IO.File]::WriteAllText((Join-Path $env:RUNNER_TEMP 'node-calls.log'), '')
             $env:INSTALLER_DOWNLOAD_URL = 'http://127.0.0.1:8765'
             $env:PATH = "$shim;$env:PATH"
             & powershell -NoProfile -ExecutionPolicy Bypass -File artifacts/forge-harness-installer.ps1 2>&1 | Tee-Object -FilePath installer.log
@@ -336,7 +333,7 @@ jobs:
             if (-not (Test-Path $forge)) { throw "missing $forge" }
             & $forge --version | Tee-Object -FilePath installed-version.txt
             if ((Get-Content installed-version.txt) -notmatch '^forge 0\.1\.0$') { throw 'bad version' }
-            if ((Get-Item (Join-Path $env:RUNNER_TEMP 'node-calls.log')).Length -ne 0) { throw 'node shim was invoked' }
+            if ((Get-Content (Join-Path $env:RUNNER_TEMP 'node-calls.log') -Raw).Trim().Length -ne 0) { throw 'node shim was invoked' }
             'no node/npm/npx/bun process was invoked' | Tee-Object -FilePath no-node-calls.txt
             @(
               'installed forge.exe: ' + (Get-AuthenticodeSignature $forge).Status,

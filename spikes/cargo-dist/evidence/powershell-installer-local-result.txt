@@ -1,0 +1,3 @@
+forge 0.1.0
+Authenticode: NotSigned
+node/npm/npx/bun shim calls: 0

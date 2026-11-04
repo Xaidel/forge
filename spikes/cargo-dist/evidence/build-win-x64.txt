@@ -1,0 +1,9 @@
+announcing v0.1.0
+  forge-harness 0.1.0
+    forge-harness-x86_64-pc-windows-msvc.zip
+      [bin] forge.exe
+      [misc] LICENSE, README.md
+      [checksum] forge-harness-x86_64-pc-windows-msvc.zip.sha256
+    forge-harness-x86_64-pc-windows-msvc.msi
+      [bin] forge.exe
+      [checksum] forge-harness-x86_64-pc-windows-msvc.msi.sha256

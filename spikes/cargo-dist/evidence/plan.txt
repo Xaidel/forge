@@ -1,0 +1,35 @@
+announcing v0.1.0
+  forge-harness 0.1.0
+    source.tar.gz
+      [checksum] source.tar.gz.sha256
+    forge-harness-installer.sh
+    forge-harness-installer.ps1
+    forge.rb
+    sha256.sum
+    forge-harness-aarch64-apple-darwin.tar.xz
+      [bin] forge
+      [misc] LICENSE, README.md
+      [checksum] forge-harness-aarch64-apple-darwin.tar.xz.sha256
+    forge-harness-aarch64-pc-windows-msvc.zip
+      [bin] forge.exe
+      [misc] LICENSE, README.md
+      [checksum] forge-harness-aarch64-pc-windows-msvc.zip.sha256
+    forge-harness-aarch64-pc-windows-msvc.msi
+      [bin] forge.exe
+      [checksum] forge-harness-aarch64-pc-windows-msvc.msi.sha256
+    forge-harness-x86_64-apple-darwin.tar.xz
+      [bin] forge
+      [misc] LICENSE, README.md
+      [checksum] forge-harness-x86_64-apple-darwin.tar.xz.sha256
+    forge-harness-x86_64-pc-windows-msvc.zip
+      [bin] forge.exe
+      [misc] LICENSE, README.md
+      [checksum] forge-harness-x86_64-pc-windows-msvc.zip.sha256
+    forge-harness-x86_64-pc-windows-msvc.msi
+      [bin] forge.exe
+      [checksum] forge-harness-x86_64-pc-windows-msvc.msi.sha256
+    forge-harness-x86_64-unknown-linux-gnu.tar.xz
+      [bin] forge
+      [misc] LICENSE, README.md
+      [checksum] forge-harness-x86_64-unknown-linux-gnu.tar.xz.sha256
+

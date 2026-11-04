@@ -1,9 +1,18 @@
 # cargo-dist packaging and release-artifact evidence
 
+> **Status: deferred (2026-11-05).** The owner deferred the release-pipeline work until Forge is
+> built and functional. This report is a partial spike record, not an accepted distribution
+> contract. The Linux x64, Windows x64 (including MSI), and Windows arm64 zip legs completed; the
+> macOS legs were still queued when the spike was paused. Do not treat the TDD-0001 guidance below
+> as final until this ticket is resumed.
+
 Ticket: [Spike cargo-dist packaging and release artifacts](https://github.com/Xaidel/forge/issues/25)
 Branch: `spike/cargo-dist` (throwaway, never merged)
 Fixture: [`fixture/`](fixture) — package `forge-harness`, binary `forge`, version `0.1.0`
-cargo-dist: **0.33.0** (latest stable at the time of the spike, 2026-09-10)
+cargo-dist: **0.33.0** for the end-to-end run (2026-09-10). **0.34.0** (2026-11-01) was
+downloaded and its `dist plan` for this fixture was diffed against 0.33.0's: the only relevant
+change is that the default arm64 macOS runner moved from `macos-14` to `macos-15`. Pin 0.33.1 or
+0.34.0 in the real release workflow; the config keys below are unchanged.
 Rust: **1.93.0** (PRD MSRV), edition 2024
 
 ## Verdict
@@ -103,9 +112,9 @@ the generated release pipeline but never creates a tag or GitHub Release.
 |---|---|---|---|---|---|
 | `aarch64-apple-darwin` | `macos-15` | `.tar.xz` | see run | see run | shell installer; Gatekeeper/`codesign` facts |
 | `x86_64-apple-darwin` | `macos-15-intel` | `.tar.xz` | see run | see run | shell installer |
-| `x86_64-unknown-linux-gnu` | `ubuntu-24.04` | `.tar.xz` | see run | see run | shell installer against a local HTTP server, with Node shims |
-| `x86_64-pc-windows-msvc` | `windows-2025` | `.zip` + `.msi` | see run | see run | PowerShell installer; MSI install/uninstall |
-| `aarch64-pc-windows-msvc` | `windows-11-arm` | `.zip` + `.msi` | best-effort; see run | see run | MSI is best-effort; see below |
+| `x86_64-unknown-linux-gnu` | `ubuntu-24.04` | `.tar.xz` | pass | `forge 0.1.0` | shell installer against a local HTTP server, with Node shims |
+| `x86_64-pc-windows-msvc` | `windows-2025` | `.zip` + `.msi` | pass | `forge 0.1.0` | PowerShell installer; MSI installed `forge 0.1.0` from `%ProgramFiles%` |
+| `aarch64-pc-windows-msvc` | `windows-11-arm` | `.zip` | pass (zip-only) | `forge 0.1.0` | native ARM64 PE (`0xAA64`); MSI deliberately skipped; see below |
 
 Local pre-flight on Windows 11 x64 (no WiX installed) confirmed the same artifact list from
 `dist plan --tag=v0.1.0` and built `forge-harness-x86_64-pc-windows-msvc.zip`; the MSI leg failed
@@ -114,21 +123,31 @@ so the CI run is the MSI evidence.
 
 ### Windows arm64
 
-`aarch64-pc-windows-msvc` compiles and archives natively on the `windows-11-arm` runner. The
-generated MSI path is the problem: `windows-11-arm` does not ship the WiX v3 toolchain, while
-`windows-2025` does. cargo-dist 0.33.0's MSI template also emits `InstallerVersion='450'`, while
-WiX requires 500 for an ARM64 package. Treat the arm64 MSI as best-effort, not a v1 guarantee.
+`aarch64-pc-windows-msvc` compiles and archives natively on the `windows-11-arm` runner; the
+archive contains a native ARM64 PE (`Machine=0xAA64`) and its `forge.exe --version` prints
+`forge 0.1.0`. The generated MSI path is the problem:
 
-TDD-0001 has three honest choices:
+- `windows-11-arm` does not ship the WiX v3 toolchain, while `windows-2025` does. A native arm64
+  `dist build` with the default installer set fails at `candle.exe`; a `choco install wixtoolset`
+  did not complete promptly on the arm64 runner.
+- cargo-dist 0.33.0's MSI template emits `InstallerVersion='450'`, while WiX requires 500 for an
+  ARM64 package, so even a built arm64 MSI must be install-tested before it is promised.
+- The default generated matrix does not use `windows-11-arm` at all: it cross-compiles
+  `aarch64-pc-windows-msvc` on `ubuntu-22.04` with `cargo-xwin`. That path can build the archive
+  but cannot run WiX, so the arm64 MSI entry in the plan is not achievable there either.
 
-1. Keep `aarch64-pc-windows-msvc` in `targets` but install WiX v3 in `github-build-setup` and
+Treat the arm64 MSI as best-effort, not a v1 guarantee. TDD-0001 has three honest choices:
+
+1. Keep `aarch64-pc-windows-msvc` in `targets`, install WiX v3 in `github-build-setup`, and
    validate the arm64 MSI before claiming it.
-2. Keep arm64 as a zip-only best-effort build and omit arm64 from `targets`, shipping it through a
-   separate custom job that passes `-i shell -i powershell -i homebrew` (which excludes MSI).
+2. Keep arm64 as a zip-only best-effort build. Either omit arm64 from `targets` and ship it through
+   a separate custom job that passes `-i shell -i powershell -i homebrew`, or keep it in `targets`
+   and hand-maintain the generated workflow to skip MSI on arm64.
 3. Do not ship arm64 in v1; record it as best-effort and revisit when MXC ships arm64 assets.
 
 The PRD already says Windows arm64 is best-effort (NFR-COMPAT-001, NFR-DIST-001 E3), so option 2
-or 3 preserves the v1 guarantee without a failing release job.
+or 3 preserves the v1 guarantee without a failing release job. The spike's final matrix uses
+option 2: native `windows-11-arm`, zip only, with `-i shell -i powershell -i homebrew`.
 
 ## Exact artifact names
 
@@ -193,6 +212,12 @@ without that override it would be `forge-harness.rb`.
 - Requires elevation; unsigned, so UAC shows an unknown publisher.
 - Requires WiX v3 (`candle.exe`, `light.exe`) on the build machine. GitHub's `windows-2025` image
   includes it; `windows-11-arm` does not. WiX v4 is not supported by cargo-dist 0.33.0.
+- Verified on `windows-2025`: silent install produced
+  `C:\Program Files\forge-harness\bin\forge.exe`; that binary printed `forge 0.1.0`; silent
+  uninstall succeeded. `Get-AuthenticodeSignature` on the MSI reported `NotSigned`.
+- The generated `wix/main.wxs` names the product `forge-harness` (the package name), not `forge`.
+  That is consistent with the MSI path and Program Files directory; only the Homebrew formula was
+  renamed with `formula = "forge"`.
 
 ### Homebrew (`forge.rb`)
 
@@ -223,6 +248,10 @@ end
 ### `cargo install forge-harness`
 
 - Installs the `forge` binary into `$CARGO_HOME/bin` from source.
+- Verified locally with Rust 1.93.0:
+  `cargo install --path . --root <tmp> --locked` reported
+  `Installed package forge-harness v0.1.0 ... (executable forge.exe)`, and
+  `<tmp>/bin/forge.exe --version` printed `forge 0.1.0`.
 - Requires a Rust toolchain, so it is not the standalone path.
 - cargo-dist 0.33.0 does not publish to crates.io: `publish-jobs` only accepts the built-in
   `homebrew` and `npm` jobs or custom jobs. TDD-0001 needs a separate `cargo publish` step (manual
@@ -234,6 +263,9 @@ end
 
 - `checksum = "sha256"` is the default. Every archive gets `<archive>.sha256` in the
   `sha256sum`-compatible form `<hex> *<archive>`; the `.msi` gets one too.
+- Verified on `windows-2025`: `forge-harness-x86_64-pc-windows-msvc.zip` hashed to
+  `c208770a6eb982aef422364f1006da8ac9f3da8e04c4dccb13bade1608b1d87d`, matching its `.sha256`;
+  the same pattern was verified for the Linux archive on `ubuntu-24.04`.
 - cargo-dist also emits a unified `sha256.sum` (since 0.24.0). In the global build job, after local
   artifacts are fetched into `target/distrib`, it is the convenient single file to publish. The
   release checklist should require both the unified file and the per-archive files.
@@ -263,7 +295,8 @@ end
 ### Windows SmartScreen / Smart App Control
 
 - `forge.exe`, the MSI, and the installer script are unsigned: `Get-AuthenticodeSignature` reports
-  `NotSigned`.
+  `NotSigned` for the x64 `forge.exe` and `forge-harness-x86_64-pc-windows-msvc.msi` on
+  `windows-2025`.
 - A browser-downloaded unsigned exe/MSI can show **Windows protected your PC**; the user chooses
   **More info > Run anyway** unless policy removes that button. Each release hash starts with zero
   reputation; signing would let reputation attach to the publisher.
@@ -301,9 +334,11 @@ install at `.github/workflows/release.yml`.
 - `host` uploads artifacts and creates the GitHub Release with `gh release create`.
 - `publish-homebrew-formula` checks out `Xaidel/homebrew-forge`, downloads the formula, runs
   `brew style --fix`, commits, and pushes with `HOMEBREW_TAP_TOKEN`.
-- Default runners are `ubuntu-22.04`, `macos-15-intel`, `macos-15`, and `windows-2022`; the spike
-  used `ubuntu-24.04`, `windows-2025`, and `windows-11-arm` as custom runners. `github-custom-runners`
-  can pin these in production.
+- Default runners with cargo-dist 0.33.0 are `ubuntu-22.04`, `macos-14` (arm64), `macos-15-intel`
+  (x64), and `windows-2022`; 0.34.0 moves the arm64 macOS default to `macos-15`. The generated
+  matrix cross-compiles `aarch64-pc-windows-msvc` on `ubuntu-22.04` with `cargo-xwin` (no Windows
+  arm64 runner is assumed). The spike used `ubuntu-24.04`, `windows-2025`, and `windows-11-arm` as
+  custom runners; `github-custom-runners` pins these in production.
 - `dist generate` also creates `wix/main.wxs`; it is checked in at
   [`fixture/wix/main.wxs`](fixture/wix/main.wxs) and should be committed with the release workflow.
 - A `dist build --artifacts=local -i shell -i powershell -i homebrew` invocation skips the MSI.
@@ -321,6 +356,9 @@ install at `.github/workflows/release.yml`.
 5. Use tag-push releases (default) or `dispatch-releases = true` with a manual `dry-run` rehearsal.
 6. Decide whether `sha256.sum` or the per-archive `.sha256` files are the canonical checksum
    artifact; publish both.
+7. Pin `cargo-dist-version` to 0.34.0 (or 0.33.1) and set custom runners explicitly
+   (`ubuntu-22.04` or `ubuntu-24.04`, `macos-15`, `macos-15-intel`, `windows-2025`) so a dist
+   default change cannot silently move the release environment.
 
 ## Evidence index
 
