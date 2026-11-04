@@ -1,0 +1,84 @@
+name: MXC containment spike
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - spike/mxc-containment
+
+permissions:
+  contents: read
+
+jobs:
+  spike:
+    name: ${{ matrix.label }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-15
+            label: macos-15-arm64
+          - os: macos-15-intel
+            label: macos-15-x64
+          - os: ubuntu-24.04
+            label: ubuntu-24.04-x64
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust 1.93
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.93.0
+
+      - name: Install Bubblewrap
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bubblewrap
+
+      - name: Host facts
+        shell: bash
+        run: |
+          set -x
+          uname -a
+          rustc --version
+          cargo --version
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            sw_vers
+            xcode-select -p
+            csrutil status || true
+          fi
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            cat /etc/os-release
+            bwrap --version
+            sysctl kernel.unprivileged_userns_clone || true
+            sysctl kernel.apparmor_restrict_unprivileged_userns || true
+            id
+          fi
+
+      - name: Build
+        working-directory: spikes/mxc-containment
+        run: cargo build --release --bins
+
+      - name: Run canaries
+        working-directory: spikes/mxc-containment
+        shell: bash
+        env:
+          FORGE_SPIKE_HOST_SECRET: leak-me
+          ANTHROPIC_API_KEY: sk-ant-spike-should-not-leak
+          LABEL: ${{ matrix.label }}
+        run: |
+          set -o pipefail
+          ./target/release/mxc-spike 2>&1 | tee "evidence-${LABEL}.log"
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mxc-spike-${{ matrix.label }}
+          path: |
+            spikes/mxc-containment/evidence-${{ matrix.label }}.log
+            spikes/mxc-containment/target/release/mxc-spike-run/**
+          if-no-files-found: warn

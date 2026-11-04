@@ -1,0 +1,16 @@
+[package]
+name = "mxc-containment-spike"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+mxc-sdk = "=1.0.1"
+
+[[bin]]
+name = "mxc-spike"
+path = "src/main.rs"
+
+[[bin]]
+name = "canary"
+path = "src/bin/canary.rs"
