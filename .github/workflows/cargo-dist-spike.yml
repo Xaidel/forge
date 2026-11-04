@@ -97,6 +97,18 @@ jobs:
           cd "$DIST_DIR"
           cargo --version | tee cargo-version.txt
           grep -q "$RUST_VERSION" cargo-version.txt
+      - name: Install WiX v3 on Windows arm64
+        if: runner.os == 'Windows' && matrix.target == 'aarch64-pc-windows-msvc'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if (-not (Get-Command candle.exe -ErrorAction SilentlyContinue)) {
+            choco install wixtoolset --version=3.14.1 -y --no-progress
+            $wix = Get-ChildItem 'C:\Program Files (x86)\WiX Toolset*' -Directory -ErrorAction SilentlyContinue | Select-Object -First 1
+            if (-not $wix) { throw 'WiX install did not create C:\Program Files (x86)\WiX Toolset*' }
+            Add-Content -Path $env:GITHUB_PATH -Value (Join-Path $wix.FullName 'bin')
+            Get-ChildItem (Join-Path $wix.FullName 'bin') -Filter 'candle*' | Select-Object FullName
+          }
       - name: dist build (local)
         working-directory: ${{ env.DIST_DIR }}
         shell: bash
@@ -114,8 +126,9 @@ jobs:
           test -x "$bin"
           "$bin" --version | tee version.txt
           grep -q '^forge 0\.1\.0$' version.txt
-          sha256sum -c "target/distrib/forge-harness-${{ matrix.target }}.tar.xz.sha256" 2>/dev/null \
-            || shasum -a 256 -c "target/distrib/forge-harness-${{ matrix.target }}.tar.xz.sha256"
+          cd target/distrib
+          sha256sum -c "forge-harness-${{ matrix.target }}.tar.xz.sha256" 2>/dev/null \
+            || shasum -a 256 -c "forge-harness-${{ matrix.target }}.tar.xz.sha256"
       - name: Run built binary and verify checksum (windows)
         if: runner.os == 'Windows'
         working-directory: ${{ env.DIST_DIR }}
@@ -168,8 +181,7 @@ jobs:
           $msi = Get-ChildItem "target/distrib/forge-harness-${{ matrix.target }}.msi" -ErrorAction Stop
           @(
             "exe: " + (Get-AuthenticodeSignature $exe).Status,
-            "msi: " + (Get-AuthenticodeSignature $msi.FullName).Status,
-            "installer.ps1: " + (Get-AuthenticodeSignature "target/distrib/forge-harness-installer.ps1").Status
+            "msi: " + (Get-AuthenticodeSignature $msi.FullName).Status
           ) | Tee-Object -FilePath signatures.txt
 
           $log = Join-Path $env:RUNNER_TEMP 'msi-install.log'
@@ -182,6 +194,23 @@ jobs:
           if (-not $installed) { Get-ChildItem "$env:ProgramFiles" -Recurse -Filter forge.exe -ErrorAction SilentlyContinue | Select-Object FullName; throw "MSI did not install forge.exe under Program Files" }
           $installed | Tee-Object -FilePath msi-install-path.txt
           & $installed --version | Tee-Object -FilePath msi-version.txt
+          Start-Process msiexec.exe -ArgumentList @('/x', "`"$($msi.FullName)`"", '/qn', '/norestart') -Wait
+      - name: Best-effort arm64 MSI install (Windows arm64)
+        if: runner.os == 'Windows' && matrix.target == 'aarch64-pc-windows-msvc'
+        continue-on-error: true
+        working-directory: ${{ env.DIST_DIR }}
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $msi = Get-ChildItem "target/distrib/forge-harness-${{ matrix.target }}.msi" -ErrorAction Stop
+          $log = Join-Path $env:RUNNER_TEMP 'msi-arm64-install.log'
+          $p = Start-Process msiexec.exe -ArgumentList @('/i', "`"$($msi.FullName)`"", '/qn', '/norestart', '/l*v', "`"$log`"") -Wait -PassThru
+          "arm64 msi install exit: $($p.ExitCode)" | Tee-Object -FilePath msi-arm64.txt
+          if ($p.ExitCode -ne 0) { Get-Content $log -Tail 80 | Tee-Object -FilePath msi-arm64.txt -Append; exit 0 }
+          $installed = Get-ChildItem "$env:ProgramFiles\forge-harness" -Recurse -Filter forge.exe -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $installed) { 'arm64 MSI installed no forge.exe' | Tee-Object -FilePath msi-arm64.txt -Append; exit 0 }
+          $installed.FullName | Tee-Object -FilePath msi-arm64.txt -Append
+          & $installed.FullName --version | Tee-Object -FilePath msi-arm64.txt -Append
           Start-Process msiexec.exe -ArgumentList @('/x', "`"$($msi.FullName)`"", '/qn', '/norestart') -Wait
       - name: Attest build provenance
         uses: actions/attest@v4
@@ -331,7 +360,11 @@ jobs:
             if ((Get-Content installed-version.txt) -notmatch '^forge 0\.1\.0$') { throw 'bad version' }
             if ((Get-Item (Join-Path $env:RUNNER_TEMP 'node-calls.log')).Length -ne 0) { throw 'node shim was invoked' }
             'no node/npm/npx/bun process was invoked' | Tee-Object -FilePath no-node-calls.txt
-            Get-AuthenticodeSignature $forge | Format-List | Out-String | Tee-Object -FilePath installed-signature.txt
+            @(
+              'installed forge.exe: ' + (Get-AuthenticodeSignature $forge).Status,
+              'installer.ps1: ' + (Get-AuthenticodeSignature 'artifacts/forge-harness-installer.ps1').Status,
+              'msi: ' + (Get-AuthenticodeSignature 'artifacts/forge-harness-x86_64-pc-windows-msvc.msi').Status
+            ) | Tee-Object -FilePath installed-signature.txt
           } finally {
             Stop-Process -Id $listener.Id -Force -ErrorAction SilentlyContinue
           }
