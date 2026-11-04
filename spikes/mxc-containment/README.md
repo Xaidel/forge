@@ -36,6 +36,15 @@ The canary attempts:
 6. find model keys, cloud secrets, or the host marker
    `FORGE_SPIKE_HOST_SECRET` in its environment.
 
+After the run the host checks `outside/host-sentinel.txt` and confirms that no
+`canary-write.txt` or `child-write.txt` reached the host. A write can "succeed"
+inside a private tmpfs mask while the host stays unchanged; the harness reports
+that as `CONTAINED`, not as a denial.
+
+Set `MXC_SPIKE_ALLOWLIST_ONLY=1` to omit `deniedPaths` and rely on the native
+default-deny baseline. On Ubuntu with user namespaces enabled this is the
+configuration where all six canaries are true denials.
+
 ## Build and run
 
 ```sh
@@ -51,8 +60,10 @@ $env:FORGE_SPIKE_HOST_SECRET = 'leak-me'
 .\target\release\mxc-spike.exe
 ```
 
-Exit codes: `0` all six pass, `2` a canary failed or was inconclusive, `3` MXC
-reports the host unsupported.
+Exit codes: `0` all six canaries were denied **or** the host was unchanged
+(`CONTAINED`), `2` the host changed or MXC could not run, `3` MXC reports the
+host unsupported. The verdict line distinguishes `ALL SIX CANARIES DENIED` from
+`CONTAINED`.
 
 ## CI
 
