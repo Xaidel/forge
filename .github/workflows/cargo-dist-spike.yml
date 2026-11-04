@@ -1,0 +1,372 @@
+name: cargo-dist release spike
+
+# Evidence-only workflow for https://github.com/Xaidel/forge/issues/25.
+# It exercises cargo-dist 0.33.0 against the throwaway fixture in
+# spikes/cargo-dist/fixture. It never creates a tag or GitHub Release.
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - spike/cargo-dist
+
+permissions:
+  contents: read
+
+env:
+  DIST_VERSION: "0.33.0"
+  DIST_TAG: "v0.1.0"
+  DIST_DIR: "spikes/cargo-dist/fixture"
+  RUST_VERSION: "1.93.0"
+
+jobs:
+  plan:
+    name: plan
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install cargo-dist
+        run: |
+          curl --proto '=https' --tlsv1.2 -LsSf "https://github.com/axodotdev/cargo-dist/releases/download/v${DIST_VERSION}/cargo-dist-installer.sh" | sh
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+      - name: dist plan
+        working-directory: ${{ env.DIST_DIR }}
+        run: |
+          dist --version | tee dist-version.txt
+          dist plan --tag="$DIST_TAG" --output-format=json > plan.json
+          dist plan --tag="$DIST_TAG" > plan.txt
+          cat plan.txt
+      - name: Upload plan
+        uses: actions/upload-artifact@v4
+        with:
+          name: spike-plan
+          path: |
+            ${{ env.DIST_DIR }}/plan.json
+            ${{ env.DIST_DIR }}/plan.txt
+            ${{ env.DIST_DIR }}/dist-version.txt
+
+  build-local:
+    name: build-local (${{ matrix.target }})
+    needs: plan
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            target: aarch64-apple-darwin
+          - runner: macos-15-intel
+            target: x86_64-apple-darwin
+          - runner: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+          - runner: windows-2025
+            target: x86_64-pc-windows-msvc
+          # Windows arm64 is best-effort in the PRD (NFR-COMPAT-001).
+          - runner: windows-11-arm
+            target: aarch64-pc-windows-msvc
+            best-effort: true
+    runs-on: ${{ matrix.runner }}
+    continue-on-error: ${{ matrix.best-effort || false }}
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install cargo-dist (unix)
+        if: runner.os != 'Windows'
+        run: |
+          curl --proto '=https' --tlsv1.2 -LsSf "https://github.com/axodotdev/cargo-dist/releases/download/v${DIST_VERSION}/cargo-dist-installer.sh" | sh
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+      - name: Install cargo-dist (windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $dest = Join-Path $env:RUNNER_TEMP 'cargo-dist'
+          New-Item -ItemType Directory -Force $dest | Out-Null
+          $url = "https://github.com/axodotdev/cargo-dist/releases/download/v${env:DIST_VERSION}/cargo-dist-x86_64-pc-windows-msvc.zip"
+          Invoke-WebRequest -UseBasicParsing $url -OutFile (Join-Path $dest 'cargo-dist.zip')
+          Expand-Archive -Force (Join-Path $dest 'cargo-dist.zip') $dest
+          Add-Content -Path $env:GITHUB_PATH -Value $dest
+          & (Join-Path $dest 'dist.exe') --version
+      - name: Install Rust 1.93 and target
+        shell: bash
+        run: |
+          rustup toolchain install "$RUST_VERSION" --profile minimal
+          rustup target add --toolchain "$RUST_VERSION" "${{ matrix.target }}"
+          cd "$DIST_DIR"
+          cargo --version | tee cargo-version.txt
+          grep -q "$RUST_VERSION" cargo-version.txt
+      - name: dist build (local)
+        working-directory: ${{ env.DIST_DIR }}
+        shell: bash
+        run: |
+          dist --version | tee dist-version.txt
+          dist build --tag="$DIST_TAG" --artifacts=local --target="${{ matrix.target }}" --output-format=json > dist-manifest.json
+          dist build --tag="$DIST_TAG" --artifacts=local --target="${{ matrix.target }}" --no-local-paths | tee build.txt
+      - name: Run built binary and verify checksum (unix)
+        if: runner.os != 'Windows'
+        working-directory: ${{ env.DIST_DIR }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          bin="target/distrib/forge-harness-${{ matrix.target }}/forge"
+          test -x "$bin"
+          "$bin" --version | tee version.txt
+          grep -q '^forge 0\.1\.0$' version.txt
+          sha256sum -c "target/distrib/forge-harness-${{ matrix.target }}.tar.xz.sha256" 2>/dev/null \
+            || shasum -a 256 -c "target/distrib/forge-harness-${{ matrix.target }}.tar.xz.sha256"
+      - name: Run built binary and verify checksum (windows)
+        if: runner.os == 'Windows'
+        working-directory: ${{ env.DIST_DIR }}
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $bin = "target/distrib/forge-harness-${{ matrix.target }}/forge.exe"
+          if (-not (Test-Path $bin)) { throw "missing $bin" }
+          $version = & $bin --version
+          $version | Tee-Object -FilePath version.txt
+          if ($version -notmatch '^forge 0\.1\.0$') { throw "unexpected version: $version" }
+          $zip = "target/distrib/forge-harness-${{ matrix.target }}.zip"
+          $expected = (Get-Content "$zip.sha256") -replace '^([0-9a-f]+).*$', '$1'
+          $actual = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($expected -ne $actual) { throw "checksum mismatch: $expected != $actual" }
+          "sha256 ok: $actual" | Tee-Object -FilePath checksum.txt
+      - name: Unsigned facts (macOS)
+        if: runner.os == 'macOS'
+        working-directory: ${{ env.DIST_DIR }}
+        shell: bash
+        run: |
+          set -uo pipefail
+          bin="target/distrib/forge-harness-${{ matrix.target }}/forge"
+          {
+            echo '$ codesign -dv --verbose=4'
+            codesign -dv --verbose=4 "$bin" 2>&1 || true
+            echo '$ codesign --verify --verbose=2'
+            codesign --verify --verbose=2 "$bin" 2>&1 || true
+            echo '$ spctl --assess --type execute --verbose=4'
+            spctl --assess --type execute --verbose=4 "$bin" 2>&1 || true
+          } | tee signature.txt
+
+          gk="$RUNNER_TEMP/gatekeeper"
+          mkdir -p "$gk"
+          cp "$bin" "$gk/forge"
+          xattr -w com.apple.quarantine "0081;00000000;Safari;00000000-0000-0000-0000-000000000000" "$gk/forge"
+          set +e
+          "$gk/forge" --version > gatekeeper.txt 2>&1
+          rc=$?
+          set -e
+          echo "gatekeeper exit=$rc" | tee -a gatekeeper.txt
+          cat gatekeeper.txt
+      - name: Unsigned facts and MSI (Windows x64)
+        if: runner.os == 'Windows' && matrix.target == 'x86_64-pc-windows-msvc'
+        working-directory: ${{ env.DIST_DIR }}
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $exe = "target/distrib/forge-harness-${{ matrix.target }}/forge.exe"
+          $msi = Get-ChildItem "target/distrib/forge-harness-${{ matrix.target }}.msi" -ErrorAction Stop
+          @(
+            "exe: " + (Get-AuthenticodeSignature $exe).Status,
+            "msi: " + (Get-AuthenticodeSignature $msi.FullName).Status,
+            "installer.ps1: " + (Get-AuthenticodeSignature "target/distrib/forge-harness-installer.ps1").Status
+          ) | Tee-Object -FilePath signatures.txt
+
+          $log = Join-Path $env:RUNNER_TEMP 'msi-install.log'
+          $p = Start-Process msiexec.exe -ArgumentList @('/i', "`"$($msi.FullName)`"", '/qn', '/norestart', '/l*v', "`"$log`"") -Wait -PassThru
+          if ($p.ExitCode -ne 0) { Get-Content $log -Tail 120; throw "msi install failed: $($p.ExitCode)" }
+          $installed = @(
+            "$env:ProgramFiles\forge-harness\bin\forge.exe",
+            "$env:ProgramFiles\forge-harness\forge.exe"
+          ) | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $installed) { Get-ChildItem "$env:ProgramFiles" -Recurse -Filter forge.exe -ErrorAction SilentlyContinue | Select-Object FullName; throw "MSI did not install forge.exe under Program Files" }
+          $installed | Tee-Object -FilePath msi-install-path.txt
+          & $installed --version | Tee-Object -FilePath msi-version.txt
+          Start-Process msiexec.exe -ArgumentList @('/x', "`"$($msi.FullName)`"", '/qn', '/norestart') -Wait
+      - name: Attest build provenance
+        uses: actions/attest@v4
+        with:
+          subject-path: "spikes/cargo-dist/fixture/target/distrib/*${{ matrix.target }}.*"
+      - name: Upload local artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: artifacts-build-local-${{ matrix.target }}
+          path: |
+            ${{ env.DIST_DIR }}/target/distrib/*
+            ${{ env.DIST_DIR }}/*.txt
+            ${{ env.DIST_DIR }}/dist-manifest.json
+
+  build-global:
+    name: build-global
+    needs: [plan, build-local]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install cargo-dist
+        run: |
+          curl --proto '=https' --tlsv1.2 -LsSf "https://github.com/axodotdev/cargo-dist/releases/download/v${DIST_VERSION}/cargo-dist-installer.sh" | sh
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+      - name: Install Rust 1.93
+        run: rustup toolchain install "$RUST_VERSION" --profile minimal
+      - name: Fetch local artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: artifacts-build-local-*
+          path: ${{ env.DIST_DIR }}/target/distrib
+          merge-multiple: true
+      - name: dist build (global)
+        working-directory: ${{ env.DIST_DIR }}
+        run: |
+          dist build --tag="$DIST_TAG" --artifacts=global --output-format=json > dist-manifest-global.json
+          dist build --tag="$DIST_TAG" --artifacts=global --no-local-paths | tee build-global.txt
+          echo '--- sha256.sum ---' | tee checksums.txt
+          cat target/distrib/sha256.sum | tee -a checksums.txt
+      - name: Inspect installers for runtime dependencies
+        working-directory: ${{ env.DIST_DIR }}
+        run: |
+          set -euo pipefail
+          test -f target/distrib/forge-harness-installer.sh
+          test -f target/distrib/forge-harness-installer.ps1
+          test -f target/distrib/forge.rb
+          # Runtime must be a native binary, not Node/npm/Bun.
+          if grep -Eio '\b(node|npm|npx|bun)\b' target/distrib/forge-harness-installer.sh target/distrib/forge-harness-installer.ps1 target/distrib/forge.rb | tee runtime-words.txt; then
+            echo "unexpected runtime-word match" >&2
+            exit 1
+          fi
+          echo "no node/npm/npx/bun references in installers or formula" | tee runtime-words.txt
+          ruby -c target/distrib/forge.rb | tee formula-syntax.txt
+      - name: Upload global artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: artifacts-build-global
+          path: |
+            ${{ env.DIST_DIR }}/target/distrib/*
+            ${{ env.DIST_DIR }}/*.txt
+            ${{ env.DIST_DIR }}/dist-manifest-global.json
+
+  install-linux:
+    name: install-linux (shell installer)
+    needs: [build-local, build-global]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: artifacts-build-*
+          path: artifacts
+          merge-multiple: true
+      - name: Install from local HTTP server with Node shims
+        shell: bash
+        run: |
+          set -euo pipefail
+          ls -l artifacts
+          python3 -m http.server 8765 --directory artifacts > "$RUNNER_TEMP/http.log" 2>&1 &
+          http_pid=$!
+          trap 'kill $http_pid || true' EXIT
+          for _ in $(seq 1 30); do
+            curl -fsS http://127.0.0.1:8765/ >/dev/null 2>&1 && break
+            sleep 1
+          done
+
+          mkdir -p "$RUNNER_TEMP/no-node"
+          printf '#!/bin/sh\necho "$0 $*" >> "$RUNNER_TEMP/node-calls.log"\nexit 127\n' > "$RUNNER_TEMP/no-node/node"
+          cp "$RUNNER_TEMP/no-node/node" "$RUNNER_TEMP/no-node/npm"
+          cp "$RUNNER_TEMP/no-node/node" "$RUNNER_TEMP/no-node/npx"
+          cp "$RUNNER_TEMP/no-node/node" "$RUNNER_TEMP/no-node/bun"
+          chmod +x "$RUNNER_TEMP"/no-node/*
+          : > "$RUNNER_TEMP/node-calls.log"
+
+          export INSTALLER_DOWNLOAD_URL="http://127.0.0.1:8765"
+          export PATH="$RUNNER_TEMP/no-node:$PATH"
+          sh artifacts/forge-harness-installer.sh | tee installer.log
+          "${CARGO_HOME:-$HOME/.cargo}/bin/forge" --version | tee installed-version.txt
+          grep -q '^forge 0\.1\.0$' installed-version.txt
+          test ! -s "$RUNNER_TEMP/node-calls.log"
+          echo "no node/npm/npx/bun process was invoked" | tee no-node-calls.txt
+          find "$HOME/.cargo/bin" -maxdepth 1 -name 'forge*' -ls | tee installed-files.txt
+      - name: Record shell installer install path
+        run: |
+          grep -nE 'CARGO_HOME|\.cargo/bin|INSTALLER_DOWNLOAD_URL|FORGE_HARNESS_DOWNLOAD_URL' "${{ github.workspace }}/artifacts/forge-harness-installer.sh" | head -40 | tee shell-install-path.txt
+      - name: Upload installer evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: evidence-install-linux
+          path: |
+            *.txt
+            *.log
+
+  install-windows:
+    name: install-windows (PowerShell installer + MSI)
+    needs: [build-local, build-global]
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: artifacts-build-*
+          path: artifacts
+          merge-multiple: true
+      - name: Install from local HTTP server with Node shims
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $listener = Start-Process python -ArgumentList @('-m','http.server','8765','--directory','artifacts') -PassThru
+          Start-Sleep -Seconds 3
+          try {
+            $shim = Join-Path $env:RUNNER_TEMP 'no-node'
+            New-Item -ItemType Directory -Force $shim | Out-Null
+            foreach ($name in @('node.cmd','npm.cmd','npx.cmd','bun.cmd')) {
+              Set-Content -Path (Join-Path $shim $name) -Value "@echo $name %* >> `"$env:RUNNER_TEMP\node-calls.log`"`r`n@exit /b 127"
+            }
+            Set-Content -Path (Join-Path $env:RUNNER_TEMP 'node-calls.log') -Value ''
+            $env:INSTALLER_DOWNLOAD_URL = 'http://127.0.0.1:8765'
+            $env:PATH = "$shim;$env:PATH"
+            & powershell -NoProfile -ExecutionPolicy Bypass -File artifacts/forge-harness-installer.ps1 2>&1 | Tee-Object -FilePath installer.log
+            if ($LASTEXITCODE -ne 0) { throw "powershell installer failed: $LASTEXITCODE" }
+            $forge = Join-Path $HOME '.cargo\bin\forge.exe'
+            if (-not (Test-Path $forge)) { throw "missing $forge" }
+            & $forge --version | Tee-Object -FilePath installed-version.txt
+            if ((Get-Content installed-version.txt) -notmatch '^forge 0\.1\.0$') { throw 'bad version' }
+            if ((Get-Item (Join-Path $env:RUNNER_TEMP 'node-calls.log')).Length -ne 0) { throw 'node shim was invoked' }
+            'no node/npm/npx/bun process was invoked' | Tee-Object -FilePath no-node-calls.txt
+            Get-AuthenticodeSignature $forge | Format-List | Out-String | Tee-Object -FilePath installed-signature.txt
+          } finally {
+            Stop-Process -Id $listener.Id -Force -ErrorAction SilentlyContinue
+          }
+      - name: Record PowerShell installer install path
+        shell: pwsh
+        run: |
+          Select-String -Path artifacts/forge-harness-installer.ps1 -Pattern 'CARGO_HOME|\.cargo|INSTALLER_DOWNLOAD_URL|FORGE_HARNESS_DOWNLOAD_URL' | Select-Object -First 40 | Out-String | Tee-Object -FilePath ps-install-path.txt
+      - name: Upload installer evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: evidence-install-windows
+          path: |
+            *.txt
+            *.log
+
+  verify-attestation:
+    name: verify-attestation
+    needs: [build-local, build-global]
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Fetch artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: artifacts-build-local-x86_64-unknown-linux-gnu
+          path: artifacts
+          merge-multiple: true
+      - name: gh attestation verify
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          ls -l artifacts
+          gh attestation verify artifacts/forge-harness-x86_64-unknown-linux-gnu.tar.xz --repo "${{ github.repository }}" | tee attestation-verify.txt
+      - name: Upload attestation evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: evidence-attestation
+          path: attestation-verify.txt

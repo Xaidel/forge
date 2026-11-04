@@ -1,0 +1,24 @@
+[package]
+name = "forge-harness"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.93"
+license = "MIT"
+description = "Forge v1 cargo-dist release-spike fixture"
+repository = "https://github.com/Xaidel/forge"
+homepage = "https://github.com/Xaidel/forge"
+authors = ["Karl Abechuela <karl@example.invalid>"]
+
+[package.metadata.wix]
+upgrade-guid = "3C5F39D5-CE37-4401-B4BF-4A2A1ADD4874"
+path-guid = "A512EFEF-E006-4906-A3F1-A1BFC3A319D9"
+license = false
+eula = false
+
+[[bin]]
+name = "forge"
+path = "src/main.rs"
+
+[profile.dist]
+inherits = "release"
+lto = "thin"
