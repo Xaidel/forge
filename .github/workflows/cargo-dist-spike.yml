@@ -61,9 +61,12 @@ jobs:
           - runner: windows-2025
             target: x86_64-pc-windows-msvc
           # Windows arm64 is best-effort in the PRD (NFR-COMPAT-001).
+          # It builds natively on windows-11-arm, but that image has no WiX v3, so
+          # skip the MSI and exercise the zip-only best-effort shape.
           - runner: windows-11-arm
             target: aarch64-pc-windows-msvc
             best-effort: true
+            dist_extra: "-i shell -i powershell -i homebrew"
     runs-on: ${{ matrix.runner }}
     continue-on-error: ${{ matrix.best-effort || false }}
     permissions:
@@ -97,25 +100,13 @@ jobs:
           cd "$DIST_DIR"
           cargo --version | tee cargo-version.txt
           grep -q "$RUST_VERSION" cargo-version.txt
-      - name: Install WiX v3 on Windows arm64
-        if: runner.os == 'Windows' && matrix.target == 'aarch64-pc-windows-msvc'
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          if (-not (Get-Command candle.exe -ErrorAction SilentlyContinue)) {
-            choco install wixtoolset --version=3.14.1 -y --no-progress
-            $wix = Get-ChildItem 'C:\Program Files (x86)\WiX Toolset*' -Directory -ErrorAction SilentlyContinue | Select-Object -First 1
-            if (-not $wix) { throw 'WiX install did not create C:\Program Files (x86)\WiX Toolset*' }
-            Add-Content -Path $env:GITHUB_PATH -Value (Join-Path $wix.FullName 'bin')
-            Get-ChildItem (Join-Path $wix.FullName 'bin') -Filter 'candle*' | Select-Object FullName
-          }
       - name: dist build (local)
         working-directory: ${{ env.DIST_DIR }}
         shell: bash
         run: |
           dist --version | tee dist-version.txt
-          dist build --tag="$DIST_TAG" --artifacts=local --target="${{ matrix.target }}" --output-format=json > dist-manifest.json
-          dist build --tag="$DIST_TAG" --artifacts=local --target="${{ matrix.target }}" --no-local-paths | tee build.txt
+          dist build --tag="$DIST_TAG" --artifacts=local --target="${{ matrix.target }}" ${{ matrix.dist_extra }} --output-format=json > dist-manifest.json
+          dist build --tag="$DIST_TAG" --artifacts=local --target="${{ matrix.target }}" ${{ matrix.dist_extra }} --no-local-paths | tee build.txt
       - name: Run built binary and verify checksum (unix)
         if: runner.os != 'Windows'
         working-directory: ${{ env.DIST_DIR }}
@@ -127,8 +118,12 @@ jobs:
           "$bin" --version | tee version.txt
           grep -q '^forge 0\.1\.0$' version.txt
           cd target/distrib
-          sha256sum -c "forge-harness-${{ matrix.target }}.tar.xz.sha256" 2>/dev/null \
-            || shasum -a 256 -c "forge-harness-${{ matrix.target }}.tar.xz.sha256"
+          if command -v sha256sum >/dev/null 2>&1; then
+            sha256sum -c "forge-harness-${{ matrix.target }}.tar.xz.sha256"
+          else
+            sed 's/ \*/  /' "forge-harness-${{ matrix.target }}.tar.xz.sha256" > "$RUNNER_TEMP/check.sha256"
+            shasum -a 256 -c "$RUNNER_TEMP/check.sha256"
+          fi
       - name: Run built binary and verify checksum (windows)
         if: runner.os == 'Windows'
         working-directory: ${{ env.DIST_DIR }}
@@ -194,23 +189,6 @@ jobs:
           if (-not $installed) { Get-ChildItem "$env:ProgramFiles" -Recurse -Filter forge.exe -ErrorAction SilentlyContinue | Select-Object FullName; throw "MSI did not install forge.exe under Program Files" }
           $installed | Tee-Object -FilePath msi-install-path.txt
           & $installed --version | Tee-Object -FilePath msi-version.txt
-          Start-Process msiexec.exe -ArgumentList @('/x', "`"$($msi.FullName)`"", '/qn', '/norestart') -Wait
-      - name: Best-effort arm64 MSI install (Windows arm64)
-        if: runner.os == 'Windows' && matrix.target == 'aarch64-pc-windows-msvc'
-        continue-on-error: true
-        working-directory: ${{ env.DIST_DIR }}
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $msi = Get-ChildItem "target/distrib/forge-harness-${{ matrix.target }}.msi" -ErrorAction Stop
-          $log = Join-Path $env:RUNNER_TEMP 'msi-arm64-install.log'
-          $p = Start-Process msiexec.exe -ArgumentList @('/i', "`"$($msi.FullName)`"", '/qn', '/norestart', '/l*v', "`"$log`"") -Wait -PassThru
-          "arm64 msi install exit: $($p.ExitCode)" | Tee-Object -FilePath msi-arm64.txt
-          if ($p.ExitCode -ne 0) { Get-Content $log -Tail 80 | Tee-Object -FilePath msi-arm64.txt -Append; exit 0 }
-          $installed = Get-ChildItem "$env:ProgramFiles\forge-harness" -Recurse -Filter forge.exe -ErrorAction SilentlyContinue | Select-Object -First 1
-          if (-not $installed) { 'arm64 MSI installed no forge.exe' | Tee-Object -FilePath msi-arm64.txt -Append; exit 0 }
-          $installed.FullName | Tee-Object -FilePath msi-arm64.txt -Append
-          & $installed.FullName --version | Tee-Object -FilePath msi-arm64.txt -Append
           Start-Process msiexec.exe -ArgumentList @('/x', "`"$($msi.FullName)`"", '/qn', '/norestart') -Wait
       - name: Attest build provenance
         uses: actions/attest@v4
