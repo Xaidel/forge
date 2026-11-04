@@ -177,6 +177,19 @@ Residuals (accepted by the PRD): an allowlisted host carrying attacker-controlle
 6. **24H2 validation.** Re-run on build 26100.9278+ (the tested host is 25H2 26200).
 7. **Arm64.** Not tested; Windows arm64 remains best-effort.
 8. **Real package installs.** The spike proves HTTP/CONNECT with `curl.exe` and a raw client; it does not run `npm`, `cargo`, or `pip` through the proxy. Registry installs should be a follow-up canary.
+9. **Request bodies and streaming.** The spike proxy forwards GET/HEAD-style requests and CONNECT; it does not forward POST/PUT bodies or stream large downloads. Production needs body forwarding, streaming, and size limits.
+10. **Allowlist matching.** The spike uses exact-host matching. Wildcard/suffix policy, and whether to allow a host on any port or only 80/443/registry ports, is a TDD detail.
+11. **TLS revocation/OCSP.** A `curl.exe` HTTPS request succeeded while CRL fetches to `crls.ssl.com` were denied. Some clients may require OCSP/CRL hosts; decide whether to allowlist them.
+
+## What was not proven
+
+- Request-body forwarding (POST/PUT), chunked uploads, and streaming downloads.
+- Real package-manager installs through the proxy.
+- Wildcard/suffix allowlists and port restrictions.
+- Proxy authentication; the current boundary is the peer-scoped AppContainer plus loopback isolation, with no per-task proxy token.
+- 24H2 build 26100 and Windows arm64.
+- Proxy crash/restart, long-running proxy health, and multi-user profile cleanup.
+- Dynamic control beyond the allowlist file (for example, pausing or revoking a host through a live control protocol).
 
 ## Reproduction
 
