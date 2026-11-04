@@ -94,7 +94,7 @@ jobs:
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
           unshare --user --net true
 
-      - name: Run canaries (user namespaces allowed)
+      - name: Run canaries (user namespaces allowed, explicit denies)
         if: runner.os == 'Linux'
         working-directory: spikes/mxc-containment
         shell: bash
@@ -105,6 +105,19 @@ jobs:
         run: |
           set -o pipefail
           ./target/release/mxc-spike 2>&1 | tee "evidence-${LABEL}-userns-allowed.log"
+
+      - name: Run canaries (user namespaces allowed, allowlist only)
+        if: runner.os == 'Linux'
+        working-directory: spikes/mxc-containment
+        shell: bash
+        env:
+          FORGE_SPIKE_HOST_SECRET: leak-me
+          ANTHROPIC_API_KEY: sk-ant-spike-should-not-leak
+          MXC_SPIKE_ALLOWLIST_ONLY: "1"
+          LABEL: ${{ matrix.label }}
+        run: |
+          set -o pipefail
+          ./target/release/mxc-spike 2>&1 | tee "evidence-${LABEL}-allowlist.log"
 
       - name: Upload evidence
         if: always()

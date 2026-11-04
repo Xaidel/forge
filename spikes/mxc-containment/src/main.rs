@@ -72,6 +72,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
 
     let credential_path = credentials.join("id_rsa");
     fs::write(&credential_path, b"FAKE-PRIVATE-KEY-DO-NOT-READ")?;
+    let host_sentinel = outside.join("host-sentinel.txt");
+    fs::write(&host_sentinel, b"HOST-SENTINEL-UNCHANGED")?;
+    let sentinel_before = fs::read(&host_sentinel)?;
 
     let canary_name = if cfg!(windows) { "canary.exe" } else { "canary" };
     let source_canary = env::current_exe()?
@@ -98,12 +101,26 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let worker_env = worker_environment(&worktree, &home, &temp);
     println!("worker env keys: {:?}", worker_env.iter().map(|(k, _)| k).collect::<Vec<_>>());
 
+    let allowlist_only = env::var("MXC_SPIKE_ALLOWLIST_ONLY").as_deref() == Ok("1");
+    let denied_paths = if allowlist_only {
+        Vec::new()
+    } else {
+        vec![path_string(&outside), path_string(&credentials)]
+    };
     let filesystem = FilesystemPolicy {
         readwrite_paths: vec![path_string(&worktree)],
         readonly_paths: readonly_paths(),
-        denied_paths: vec![path_string(&outside), path_string(&credentials)],
+        denied_paths,
         clear_policy_on_exit: Some(true),
     };
+    println!(
+        "policy: {}",
+        if allowlist_only {
+            "allowlist-only (no deniedPaths)"
+        } else {
+            "allowlist + explicit deniedPaths"
+        }
+    );
 
     let command = canary_command(
         &canary_path,
@@ -183,15 +200,35 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     println!(
         "canary summary: passed={passed} failed={failed} inconclusive={inconclusive}"
     );
+
+    // A masked path can make a write succeed inside the sandbox while never
+    // touching the host. The security property is host non-mutation, so check
+    // the host fixtures after the run rather than trusting the syscall result.
+    let sentinel_after = fs::read(&host_sentinel).unwrap_or_default();
+    let mutation_canary = outside.join("canary-write.txt").exists();
+    let mutation_child = outside.join("child-write.txt").exists();
+    let sentinel_changed = sentinel_after != sentinel_before;
+    println!(
+        "host mutation check: sentinel_changed={sentinel_changed} canary_write_created={mutation_canary} child_write_created={mutation_child}"
+    );
+    let host_mutated = sentinel_changed || mutation_canary || mutation_child;
+
     match result.outcome {
         WaitResult::Exited(0) => {}
         WaitResult::Exited(code) => println!("canary process exited with code {code}"),
         WaitResult::TimedOut => println!("canary process timed out"),
     }
-    if failed > 0 || inconclusive > 0 || passed < 6 {
+    if host_mutated {
+        println!("SPIKE RESULT: HOST MUTATION DETECTED");
         std::process::exit(2);
     }
-    println!("SPIKE RESULT: ALL SIX CANARIES PASS");
+    if failed > 0 || inconclusive > 0 || passed < 6 {
+        println!(
+            "SPIKE RESULT: CONTAINED (raw denials not all enforced; the host was unchanged)"
+        );
+        return Ok(());
+    }
+    println!("SPIKE RESULT: ALL SIX CANARIES DENIED");
     Ok(())
 }
 
