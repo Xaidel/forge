@@ -7,6 +7,7 @@
 **Companions:** [architecture.md](../../arch_docs/architecture.md), [dependency-rules.md](../../arch_docs/dependency-rules.md), [naming-conventions.md](../../arch_docs/naming-conventions.md)  
 **ADRs:** [ADR-0001](../adr/0001-two-crate-ports-only-core.md), [ADR-0002](../adr/0002-executor-agnostic-io-free-core.md), [ADR-0003](../adr/0003-hidden-worker-subcommand.md), [ADR-0004](../adr/0004-callback-model-streaming-cancellation.md), [ADR-0005](../adr/0005-repo-scoped-sequential-task-ids.md)  
 **Ticket:** [Define the domain model, ports, and application assembly (TDD-0002)](https://github.com/Xaidel/forge/issues/21)
+**Amended by:** [TDD-0005](0005-decision-ledger-records.md) (2026-11-04) — ledger record types, `VerifyLedger`, `LedgerPort`/`GitPort` additions, and the backlink/substance-hash contract.
 
 ---
 
@@ -69,7 +70,7 @@ The exact JSON, YAML, TOML, JSONL, Git, provider, and terminal encodings are own
 - Time and identity arrive through `ClockPort` and `IdSourcePort`.
 - Async ports use `#[async_trait]`, are object-safe, return `Send` futures, are cancellation-safe by drop, keep no request-scoped state, and hold no lock across `.await`.
 - Test dev-dependency is exactly `pollster`. Fakes are test-only.
-- The counts in this contract are **11 outbound ports** and **16 inbound capabilities**. An earlier grilling summary said "12 outbound"; that was an arithmetic slip. `ClockPort`, `IdSourcePort`, `ConfigPort`, `SessionStorePort`, `PolicyPort`, `LedgerPort`, `GitPort`, `ModelPort`, `SandboxPort`, `AttestationPort`, and `AuditPort` are the full set.
+- The counts in this contract are **11 outbound ports** and **17 inbound capabilities**. An earlier grilling summary said "12 outbound"; that was an arithmetic slip. `ClockPort`, `IdSourcePort`, `ConfigPort`, `SessionStorePort`, `PolicyPort`, `LedgerPort`, `GitPort`, `ModelPort`, `SandboxPort`, `AttestationPort`, and `AuditPort` are the full set. `VerifyLedger` is the seventeenth inbound capability, added by TDD-0005.
 
 ---
 
@@ -417,7 +418,7 @@ pub(crate) struct Decision {
     pub(crate) id: DecisionId,
     pub(crate) task_id: TaskId,
     pub(crate) title: String,
-    pub(crate) chosen_option: String,
+    pub(crate) chosen_option: Option<String>,
     pub(crate) rationale: String,
     pub(crate) provenance: RationaleProvenance,
     pub(crate) reversibility: Reversibility,
@@ -426,6 +427,7 @@ pub(crate) struct Decision {
     pub(crate) refs: Vec<TypedRef>,
     pub(crate) status: DecisionStatus,
     pub(crate) created_at: Timestamp,
+    pub(crate) decided_at: Timestamp,
 }
 
 pub(crate) struct VerificationEvidence {
@@ -634,18 +636,18 @@ Every record below is public because it crosses a port boundary or appears in `A
 | Gates | `Gate`, `PlanGate`, `DecisionRequest`, `DecisionOption`, `PermissionRequest`, `PermissionAction`, `PermissionScope`, `PermissionScopeOffer`, `Grant`, `ReviewGate`, `GateStatus`, `GateAnswer`, `PlanAnswer`, `DecisionAnswer`, `PermissionAnswer`, `GateOutcome`, `RationaleProvenance`, `RationaleMethod`, `Reversibility`, `BlastRadius` |
 | Review | `ReviewPacket`, `ReviewSummary`, `DiffSnapshot`, `DiffFile`, `DiffStatus`, `ReviewFlag`, `PlanVsActual`, `PlanVsActualEntry`, `VerificationEvidence`, `VerificationOutcome`, `PermissionSummary`, `PermissionGrantRecord`, `RepoConfidence`, `FacetConfidence`, `FacetKind`, `FacetStatus`, `CheckConfidence`, `CheckRunStatus`, `RepoMapUpdate`, `PackageGroup`, `CheckStatus`, `UntrustedContentRef`, `UntrustedContentKind`, `SteeringAttempt`, `SteeringClass`, `SteeringDetector`, `ProtectedPath` |
 | Attestation | `AttestationRecord`, `AttestationVerification`, `AttesterIdentity`, `VivaQuestionRecord`, `VivaAnchor`, `VivaAttempt`, `VivaVerdict`, `JudgeMetadata`, `SigningScheme`, `SigningKind`, `LedgerBinding`, `EvidenceBinding`, `FourthAnchorState`, `OverrideRecord`, `MergeOutcome`, `MergeResult`, `Trailer` |
-| Ledger | `DecisionRecord`, `DecisionOptionRecord`, `DecisionStatus`, `AssumptionRecord`, `RecordKind`, `DetailLevel`, `Visibility`, `TypedRef`, `RefKind`, `PolicyProvenance`, `Erratum`, `LedgerVerificationReport`, `LedgerIndex`, `LedgerIndexEntry` |
+| Ledger | `DecisionRecord`, `DecisionStub`, `DecisionOptionRecord`, `DecisionStatus`, `AssumptionRecord`, `AssumptionStub`, `RecordKind`, `RecordId`, `DetailLevel`, `Visibility`, `TypedRef`, `RefKind`, `PolicyProvenance`, `Erratum`, `AttestationBacklink`, `LedgerRecordView`, `DecisionView`, `AssumptionView`, `LedgerRecordFingerprint`, `LedgerIssue`, `LedgerIssueCode`, `LedgerSeverity`, `LedgerRepair`, `LedgerVerificationReport`, `LedgerIndex`, `LedgerIndexEntry` |
 | Config and policy | `ConfigSnapshot`, `RepoMapSnapshot`, `PackageRoot`, `EntryPoint`, `ModuleRoot`, `ContextDoc`, `FacetSpec`, `VerificationChoice`, `CheckDefinition`, `CheckKind`, `ModelSlotBinding`, `DecisionPolicySnapshot`, `PolicyRule`, `PolicyTrigger`, `PolicyTriggerKind`, `TriggerSource`, `FullRecordRule`, `ExecutionPolicySnapshot`, `TrustDeclaration`, `SandboxProbeRequest`, `SandboxProbeReport`, `SandboxProbeCheck`, `CanaryKind`, `ExecutionMode` |
 | Model | `ModelRequest`, `ModelResponse`, `ModelMessage`, `ModelRole`, `ContentBlock`, `SourceEnvelope`, `ToolDefinition`, `ToolCall`, `ToolCallDelta`, `ModelParameters`, `StopReason`, `ModelEventSink`, `ModelInfo`, `ProfileValidation`, `Usage`, `ProviderAllowance`, `ModelSlot`, `ProfileName`, `ModelId`, `ModelSelection` |
 | Sandbox and tools | `ToolRequest`, `ToolResult`, `ToolEventSink`, `ToolEvent`, `OperationId`, `ModelCallId`, `Grant`, `SandboxProbeRequest`, `FileChange` |
 | Reports | `StatusReport`, `TranscriptReport`, `AuditReport`, `AuditEntry`, `AuditEntryKind`, `AuditFinding`, `EnforcementStatus`, `HooksStatus`, `HookState`, `HookKind` |
-| Inbound requests and responses | `StartTaskRequest`, `ResumeTaskRequest`, `RetryTaskRequest`, `PauseTaskRequest`, `CancelTaskRequest`, `ReopenTaskRequest`, `MergeTaskRequest`, `OverrideMergeRequest`, `AnswerGateRequest`, `OpenReviewRequest`, `StartAttestationRequest`, `AnswerAttestationRequest`, `SubmitAttestationRequest`, `SwitchModelRequest`, `IncreaseBudgetRequest`, `QueryStatusRequest`, `QueryTranscriptRequest`, `QueryAuditRequest`, `VivaPrompt`, `VivaProgress` |
+| Inbound requests and responses | `StartTaskRequest`, `ResumeTaskRequest`, `RetryTaskRequest`, `PauseTaskRequest`, `CancelTaskRequest`, `ReopenTaskRequest`, `MergeTaskRequest`, `OverrideMergeRequest`, `AnswerGateRequest`, `OpenReviewRequest`, `StartAttestationRequest`, `AnswerAttestationRequest`, `SubmitAttestationRequest`, `SwitchModelRequest`, `IncreaseBudgetRequest`, `QueryStatusRequest`, `QueryTranscriptRequest`, `QueryAuditRequest`, `VerifyLedgerRequest`, `MigrateLedgerRequest`, `LedgerMigrationReport`, `MigrationFileDiff`, `VivaPrompt`, `VivaProgress` |
 | Assembly and errors | `ApplicationPorts`, `Application`, `DomainError`, `SessionError`, `ConfigError`, `PolicyError`, `LedgerError`, `GitError`, `ModelError`, `SandboxError`, `AttestationError`, `AuditError`, `IdSourceError`, `ApplicationError` |
-| Git and worktree | `Worktree`, `WorktreeStatus`, `DiffSummary`, `SignatureVerification`, `MergePreflight`, `CommitRequest`, `AttestationCommitRequest`, `MergeRequest`, `HookInstallRequest`, `HookInstallReport` |
+| Git and worktree | `Worktree`, `WorktreeStatus`, `CommitInfo`, `DiffSummary`, `SignatureVerification`, `MergePreflight`, `CommitRequest`, `AttestationCommitRequest`, `MergeRequest`, `HookInstallRequest`, `HookInstallReport` |
 
 **Constructor rule.** Every identity, name, and hash newtype exposes a validating `try_new` and an `as_str` accessor. Construction from an invalid value is a typed error. The primitive wrappers `Timestamp`, `UsdMicros`, `PlanVersion`, `EventSequence`, `StepId`, `AcceptanceCriterionId`, and `CheckId` are public tuple structs; their owning type validates semantic bounds. `TaskGoal`, `BaseRef`, `BranchName`, `CommitSha`, `ContentHash`, `GateId`, `DecisionId`, `AssumptionId`, `AttestationId`, `OverrideId`, `ProfileName`, `ModelId`, `ModelCallId`, `OperationId`, and `SteeringClass` have private fields. Adapters construct them through `try_new`; they never mutate the inner string.
 
-**Extensibility rule.** Public enums that a later TDD may extend are `#[non_exhaustive]`: `SessionEventKind`, `PolicyTriggerKind`, `ReviewFlag`, `StopReason`, `PermissionAction`, `PlanRevisionCause`, `ModelError`, and the other error enums. `TaskState`, `RiskClass`, `GateKind`, `GateStatus`, `DecisionMapStatus`, `AssumptionStatus`, `ExecutionMode`, `TrustDeclaration`, `Visibility`, `DetailLevel`, `RecordKind`, `RefKind`, `VerificationOutcome`, `CheckKind`, `ModelSlot`, `HookKind`, `HookState`, `CanaryKind`, `SteeringDetector`, `VivaAnchor`, `VivaVerdict`, `SigningKind`, `FourthAnchorState`, `FacetKind`, `FacetStatus`, and `CheckRunStatus` are exhaustive because the PRD fixes their values. Adding a value to an exhaustive enum is an amendment to this document.
+**Extensibility rule.** Public enums that a later TDD may extend are `#[non_exhaustive]`: `SessionEventKind`, `PolicyTriggerKind`, `ReviewFlag`, `StopReason`, `PermissionAction`, `PlanRevisionCause`, `ModelError`, `LedgerIssueCode`, and the other error enums. `TaskState`, `RiskClass`, `GateKind`, `GateStatus`, `DecisionMapStatus`, `AssumptionStatus`, `ExecutionMode`, `TrustDeclaration`, `Visibility`, `DetailLevel`, `RecordKind`, `RefKind`, `LedgerSeverity`, `VerificationOutcome`, `CheckKind`, `ModelSlot`, `HookKind`, `HookState`, `CanaryKind`, `SteeringDetector`, `VivaAnchor`, `VivaVerdict`, `SigningKind`, `FourthAnchorState`, `FacetKind`, `FacetStatus`, and `CheckRunStatus` are exhaustive because the PRD fixes their values. Adding a value to an exhaustive enum is an amendment to this document.
 
 ### 6.2 Identity and time
 
@@ -1356,8 +1358,8 @@ pub struct ReviewPacket {
     pub summary: ReviewSummary,
     pub diff: DiffSnapshot,
     pub plan_vs_actual: PlanVsActual,
-    pub decisions: Vec<DecisionRecord>,
-    pub assumptions: Vec<AssumptionRecord>,
+    pub decisions: Vec<DecisionView>,
+    pub assumptions: Vec<AssumptionView>,
     pub verification: Vec<VerificationEvidence>,
     pub open_questions: Vec<String>,
     pub permissions: PermissionSummary,
@@ -1434,6 +1436,7 @@ pub struct SigningScheme {
 pub struct LedgerBinding {
     pub record_id: String,
     pub content_hash: ContentHash,
+    pub substance_hash: ContentHash,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -1541,12 +1544,55 @@ pub enum DecisionStatus {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub enum RecordId {
+    Decision(DecisionId),
+    Assumption(AssumptionId),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum RefKind { Task, Plan, Commit, Diff, File, Issue, Adr, Url, Unknown(String) }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct TypedRef {
-    pub kind: RefKind,
-    pub value: String,
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub enum TypedRef {
+    Task {
+        id: TaskId,
+    },
+    Plan {
+        id: PlanVersion,
+        path: Option<PathBuf>,
+    },
+    Commit {
+        sha: CommitSha,
+        path: Option<PathBuf>,
+        symbol: Option<String>,
+        blob: Option<ContentHash>,
+    },
+    Diff {
+        base: CommitSha,
+        head: CommitSha,
+        path: Option<PathBuf>,
+    },
+    File {
+        path: PathBuf,
+        blob: Option<ContentHash>,
+        symbol: Option<String>,
+    },
+    Issue {
+        url: String,
+        title: Option<String>,
+    },
+    Adr {
+        path: PathBuf,
+        commit: Option<CommitSha>,
+    },
+    Url {
+        url: String,
+        title: Option<String>,
+    },
+    Unknown {
+        kind: String,
+        value: String,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -1572,6 +1618,12 @@ pub struct Erratum {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AttestationBacklink {
+    pub id: AttestationId,
+    pub commit: CommitSha,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DecisionRecord {
     pub schema_version: u32,
     pub decision_id: DecisionId,
@@ -1580,6 +1632,7 @@ pub struct DecisionRecord {
     pub title: String,
     pub status: DecisionStatus,
     pub created_at: Timestamp,
+    pub decided_at: Timestamp,
     pub updated_at: Timestamp,
     pub owner: String,
     pub approver: String,
@@ -1587,18 +1640,19 @@ pub struct DecisionRecord {
     pub rationale_provenance: RationaleProvenance,
     pub reversibility: Reversibility,
     pub blast_radius: BlastRadius,
-    pub refs: Vec<TypedRef>,
-    pub implemented_by: Vec<CommitSha>,
-    pub supersedes: Vec<DecisionId>,
-    pub superseded_by: Option<DecisionId>,
-    pub visibility: Visibility,
-    pub policy: Option<PolicyProvenance>,
     pub task_id: TaskId,
-    pub chosen_option: String,
+    pub refs: Vec<TypedRef>,
+    pub chosen_option: Option<String>,
+    pub policy: Option<PolicyProvenance>,
+    pub policy_triggers: Vec<String>,
     pub adr: Option<String>,
-    pub attestation: Option<AttestationId>,
+    pub attestation: Option<AttestationBacklink>,
     pub status_reason: Option<String>,
     pub revisit_if: Option<String>,
+    pub supersedes: Vec<RecordId>,
+    pub superseded_by: Option<RecordId>,
+    pub implemented_by: Vec<CommitSha>,
+    pub visibility: Visibility,
     pub rationale: String,
     pub context: Option<String>,
     pub options: Vec<DecisionOptionRecord>,
@@ -1618,13 +1672,14 @@ pub struct AssumptionRecord {
     pub created_at: Timestamp,
     pub updated_at: Timestamp,
     pub logger: String,
-    pub reviewer: Option<String>,
+    pub reviewed_by: Option<String>,
+    pub reviewed_at: Option<Timestamp>,
     pub risk: AssumptionRisk,
     pub revisit_if: String,
     pub task_id: TaskId,
     pub refs: Vec<TypedRef>,
-    pub supersedes: Vec<AssumptionId>,
-    pub superseded_by: Option<AssumptionId>,
+    pub supersedes: Vec<RecordId>,
+    pub superseded_by: Option<RecordId>,
     pub visibility: Visibility,
     pub assumption: String,
     pub basis: String,
@@ -1634,30 +1689,177 @@ pub struct AssumptionRecord {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DecisionStub {
+    pub schema_version: u32,
+    pub decision_id: DecisionId,
+    pub kind: RecordKind,
+    pub detail: DetailLevel,
+    pub title: String,
+    pub status: DecisionStatus,
+    pub created_at: Timestamp,
+    pub decided_at: Timestamp,
+    pub updated_at: Timestamp,
+    pub owner: String,
+    pub approver: String,
+    pub supersedes: Vec<RecordId>,
+    pub superseded_by: Option<RecordId>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AssumptionStub {
+    pub schema_version: u32,
+    pub assumption_id: AssumptionId,
+    pub kind: RecordKind,
+    pub detail: DetailLevel,
+    pub title: String,
+    pub status: AssumptionStatus,
+    pub created_at: Timestamp,
+    pub updated_at: Timestamp,
+    pub logger: String,
+    pub reviewed_by: Option<String>,
+    pub reviewed_at: Option<Timestamp>,
+    pub supersedes: Vec<RecordId>,
+    pub superseded_by: Option<RecordId>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum LedgerRecordView<F, S> {
+    Full(F),
+    Stub(S),
+}
+
+pub type DecisionView = LedgerRecordView<DecisionRecord, DecisionStub>;
+pub type AssumptionView = LedgerRecordView<AssumptionRecord, AssumptionStub>;
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LedgerRecordFingerprint {
+    pub record_id: String,
+    pub kind: RecordKind,
+    pub detail: DetailLevel,
+    pub visibility: Visibility,
+    pub committed_path: PathBuf,
+    pub local_path: Option<PathBuf>,
+    pub content_hash: ContentHash,
+    pub substance_hash: ContentHash,
+    pub safe_hash: ContentHash,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum LedgerSeverity { Error, Warning }
+
+#[non_exhaustive]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum LedgerIssueCode {
+    MissingFrontMatter,
+    FrontMatterUnterminated,
+    YamlParseError,
+    DuplicateKey,
+    MissingField,
+    UnknownField,
+    UnknownBodySection,
+    BodySectionOrder,
+    BodySectionMissing,
+    BodySectionEmpty,
+    DuplicateBodySection,
+    SchemaTooNew,
+    SchemaUnsupported,
+    InvalidField,
+    InvalidId,
+    IdMismatch,
+    DuplicateId,
+    DuplicateIdDivergent,
+    InvalidTimestamp,
+    InvalidEnum,
+    InvalidPath,
+    InvalidUrl,
+    MissingHumanIdentity,
+    AgentIdentityForbidden,
+    DetailLevelMismatch,
+    StatusNotWritable,
+    StatusFieldMismatch,
+    ForbiddenField,
+    LocalRequiresFull,
+    StubLocalMismatch,
+    LocalRepoConflict,
+    DuplicateOptionLabel,
+    ChosenOptionUnknown,
+    ErrataMalformed,
+    ErrataSequence,
+    UnknownRefKind,
+    InvalidReference,
+    UnresolvableRef,
+    BrokenForwardLink,
+    MissingBacklink,
+    MissingImplementedBy,
+    ImplementedByMismatch,
+    MissingAttestationBacklink,
+    AttestationMismatch,
+    SecretDetected,
+    SecretScanUnavailable,
+    IndexCorrupt,
+    IndexStale,
+    DirtyLedger,
+    ActiveTask,
+    TrailerMalformed,
+    MisplacedTrailer,
+    MigrationSubstanceChanged,
+    MigrationFailed,
+    UnsupportedMigration,
+    RecordNotFound,
+    WriteFailed,
+    IoError,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LedgerIssue {
+    pub code: LedgerIssueCode,
+    pub severity: LedgerSeverity,
+    pub record_id: Option<String>,
+    pub path: Option<PathBuf>,
+    pub field: Option<String>,
+    pub message: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LedgerRepair {
+    pub record_id: String,
+    pub path: PathBuf,
+    pub field: String,
+    pub old_value: Option<String>,
+    pub new_value: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct LedgerVerificationReport {
+    pub issues: Vec<LedgerIssue>,
     pub duplicate_ids: Vec<String>,
     pub broken_links: Vec<String>,
     pub missing_backlinks: Vec<String>,
-    pub repaired: Vec<String>,
-    pub errors: Vec<String>,
+    pub repaired: Vec<LedgerRepair>,
+    pub errors: usize,
+    pub warnings: usize,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct LedgerIndexEntry {
     pub record_id: String,
     pub kind: RecordKind,
-    pub path: PathBuf,
+    pub detail: DetailLevel,
+    pub visibility: Visibility,
+    pub committed_path: PathBuf,
+    pub local_path: Option<PathBuf>,
     pub content_hash: ContentHash,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct LedgerIndex {
+    pub index_version: u32,
     pub entries: Vec<LedgerIndexEntry>,
     pub generated_at: Timestamp,
 }
 ```
 
-TDD-0005 owns the YAML front matter, Markdown body, validation errors, duplicate handling, and index serialization. The Rust fields above are the stable core shape.
+TDD-0005 owns the YAML front matter, Markdown body, validation errors, duplicate handling, and index serialization. The Rust fields above are the stable core shape, as amended by TDD-0005. `AssumptionSnapshot` remains the plan-level assumption; cross-kind escalation is recorded in `AssumptionRecord` and the plan's decision map, not in the plan snapshot. `LedgerIssueCode` variants map one-to-one to the snake_case issue codes in TDD-0005 §11.3; `infra_local` performs the mapping.
 
 ### 6.9 Config, policy, and repo map
 
@@ -2169,6 +2371,13 @@ pub struct WorktreeStatus {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CommitInfo {
+    pub sha: CommitSha,
+    pub parents: Vec<CommitSha>,
+    pub message: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SignatureVerification {
     pub valid: bool,
     pub signer_fingerprint: Option<String>,
@@ -2330,6 +2539,19 @@ pub trait QueryTranscript: Send + Sync {
 pub trait QueryAudit: Send + Sync {
     async fn query_audit(&self, request: QueryAuditRequest) -> Result<AuditReport, ApplicationError>;
 }
+
+#[async_trait::async_trait]
+pub trait VerifyLedger: Send + Sync {
+    async fn verify_ledger(
+        &self,
+        request: VerifyLedgerRequest,
+    ) -> Result<LedgerVerificationReport, ApplicationError>;
+
+    async fn migrate_ledger(
+        &self,
+        request: MigrateLedgerRequest,
+    ) -> Result<LedgerMigrationReport, ApplicationError>;
+}
 ```
 
 Request and response records:
@@ -2437,6 +2659,33 @@ pub struct QueryTranscriptRequest {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct QueryAuditRequest {}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct VerifyLedgerRequest {
+    pub repair: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct MigrateLedgerRequest {
+    pub confirmed: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LedgerMigrationReport {
+    pub from_version: u32,
+    pub to_version: u32,
+    pub files: Vec<PathBuf>,
+    pub preview: Vec<MigrationFileDiff>,
+    pub commit: Option<CommitSha>,
+    pub local_backup: Option<PathBuf>,
+    pub issues: Vec<LedgerIssue>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MigrationFileDiff {
+    pub path: PathBuf,
+    pub diff: String,
+}
 ```
 
 Every request is owned plain data. No request holds an adapter, a lock, a future, or a reference to private state.
@@ -2502,8 +2751,9 @@ pub trait PolicyPort: Send + Sync {
 pub trait LedgerPort: Send + Sync {
     async fn write_decision(&self, record: &DecisionRecord) -> Result<(), LedgerError>;
     async fn write_assumption(&self, record: &AssumptionRecord) -> Result<(), LedgerError>;
-    async fn read_decision(&self, id: &DecisionId) -> Result<Option<DecisionRecord>, LedgerError>;
-    async fn read_assumption(&self, id: &AssumptionId) -> Result<Option<AssumptionRecord>, LedgerError>;
+    async fn read_decision(&self, id: &DecisionId) -> Result<Option<DecisionView>, LedgerError>;
+    async fn read_assumption(&self, id: &AssumptionId) -> Result<Option<AssumptionView>, LedgerError>;
+    async fn fingerprint(&self, id: &RecordId) -> Result<LedgerRecordFingerprint, LedgerError>;
     async fn verify(&self) -> Result<LedgerVerificationReport, LedgerError>;
     async fn rebuild_index(&self) -> Result<LedgerIndex, LedgerError>;
 }
@@ -2523,6 +2773,8 @@ pub trait GitPort: Send + Sync {
     async fn parents(&self, commit: &CommitSha) -> Result<Vec<CommitSha>, GitError>;
     async fn tree_hash(&self, commit: &CommitSha) -> Result<ContentHash, GitError>;
     async fn commit_message(&self, commit: &CommitSha) -> Result<String, GitError>;
+    async fn current_worktree(&self) -> Result<Worktree, GitError>;
+    async fn first_parent_log(&self, to: &CommitSha) -> Result<Vec<CommitInfo>, GitError>;
     async fn read_blob(
         &self,
         commit: &CommitSha,
@@ -2634,7 +2886,7 @@ pub struct AttestationVerification {
 
 - `ConfigPort` is the only port that reads `.forge/config`; `PolicyPort` reads `.forge/policy`; `SandboxPort` reads `.forge/execution-policy.json` and `.forge/local/repo-trust.json`. No other port reads those files.
 - `SessionStorePort` owns `state.json`, `events.jsonl`, `plans/`, `artifacts/`, and `.forge/active-task.lock`. It is the only port that writes them.
-- `LedgerPort` owns `.forge/decisions/`, `.forge/assumptions/`, and `.forge/local/index.json`.
+- `LedgerPort` owns `.forge/decisions/`, `.forge/assumptions/`, `.forge/local/decisions/`, `.forge/local/assumptions/`, and `.forge/local/index.json`.
 - `GitPort` owns `.forge/worktrees/`, branches, commits, merges, hooks, and signature verification.
 - `AttestationPort` owns `.forge/attestations/`, `.forge/local/attestations/`, `.forge/overrides/`, and `.forge/trust/`.
 - `AuditPort` owns the read model over session events, hooks, overrides, and merged branches.
@@ -2767,12 +3019,20 @@ pub enum LedgerError {
     MissingField { field: &'static str },
     #[error("invalid {kind} reference: {value}")]
     InvalidReference { kind: RefKind, value: String },
-    #[error("a secret was detected at {location}")]
-    SecretDetected { location: String },
+    #[error("a secret was detected at {location} ({rule_id})")]
+    SecretDetected { location: String, rule_id: String },
+    #[error("the secret scanner is unavailable: {message}")]
+    SecretScanUnavailable { message: String },
+    #[error("the human identity is missing: {field}")]
+    MissingHumanIdentity { field: &'static str },
     #[error("schema version {found} is newer than supported {supported}")]
     SchemaTooNew { found: u32, supported: u32 },
+    #[error("ledger validation failed with {issues:?}")]
+    Validation { issues: Vec<LedgerIssue> },
     #[error("ledger verification failed: {reasons:?}")]
     VerificationFailed { reasons: Vec<String> },
+    #[error("failed to migrate {path:?}: {message}")]
+    MigrationFailed { path: PathBuf, message: String },
     #[error("failed to write {path:?}: {message}")]
     WriteFailed { path: PathBuf, message: String },
 }
@@ -2987,6 +3247,7 @@ Each inbound capability is implemented by exactly one private use case. A use ca
 | `QueryStatusUseCase` | `QueryStatus` | `SessionStorePort`, `ConfigPort`, `SandboxPort`, `AuditPort` |
 | `QueryTranscriptUseCase` | `QueryTranscript` | `SessionStorePort` |
 | `QueryAuditUseCase` | `QueryAudit` | `AuditPort`, `SessionStorePort`, `GitPort`, `LedgerPort` |
+| `VerifyLedgerUseCase` | `VerifyLedger` | `LedgerPort`, `SessionStorePort`, `GitPort`, `AuditPort`, `ClockPort` |
 
 Each use case is `pub(crate)`, implements exactly one inbound trait, and is never re-exported.
 
@@ -3003,6 +3264,7 @@ Each use case is `pub(crate)`, implements exactly one inbound trait, and is neve
 - `OverrideRecord -> Override` and `Override -> OverrideRecord`
 - `DecisionPolicySnapshot -> DecisionPolicy` and `ExecutionPolicySnapshot -> ExecutionPolicy`
 - `ConfigSnapshot -> RepoMap`, `CheckDefinition`, `VerificationChoice`
+- `DecisionView::Stub` / `AssumptionView::Stub` maps to a review reference using only its safe fields; a stub never becomes a full `Decision` or `Assumption`
 
 Mapping rules:
 
@@ -3048,6 +3310,7 @@ pub struct Application {
     pub(crate) query_status: Arc<dyn QueryStatus + Send + Sync>,
     pub(crate) query_transcript: Arc<dyn QueryTranscript + Send + Sync>,
     pub(crate) query_audit: Arc<dyn QueryAudit + Send + Sync>,
+    pub(crate) verify_ledger: Arc<dyn VerifyLedger + Send + Sync>,
 }
 
 impl Application {
@@ -3067,6 +3330,7 @@ impl Application {
     pub fn query_status(&self) -> Arc<dyn QueryStatus + Send + Sync>;
     pub fn query_transcript(&self) -> Arc<dyn QueryTranscript + Send + Sync>;
     pub fn query_audit(&self) -> Arc<dyn QueryAudit + Send + Sync>;
+    pub fn verify_ledger(&self) -> Arc<dyn VerifyLedger + Send + Sync>;
 }
 
 pub fn build_application(ports: ApplicationPorts) -> Application;
@@ -3112,8 +3376,8 @@ The following test doubles live in `#[cfg(test)]` modules inside `app_core` or i
 | `FakeConfigPort` | In-memory `ConfigSnapshot`; can return `ConfigError`. |
 | `FakeSessionStore` | In-memory snapshots, plans, artifacts, events, and one lock; enforces sequence and stale-lock rules. |
 | `FakePolicyPort` | In-memory `DecisionPolicySnapshot`; can return `PolicyError`. |
-| `FakeLedgerPort` | In-memory records and index; enforces duplicate IDs and supports `verify`. |
-| `FakeGitPort` | In-memory refs, worktrees, commits, merges, hooks, and signatures; can return `GitError`. |
+| `FakeLedgerPort` | In-memory full records, stubs, fingerprints, and index; enforces duplicate IDs and supports `verify`. |
+| `FakeGitPort` | In-memory refs, worktrees, commits, merges, hooks, first-parent logs, and signatures; can return `GitError`. |
 | `FakeModelPort` | Scripted text, reasoning, tool calls, usage, errors, and cancellation. |
 | `FakeSandboxPort` | Scripted mode, canaries, permission requests, grants, tool results, and cancellation. |
 | `FakeAttestationPort` | In-memory attestations and overrides; verifies recorded hashes and signatures. |
@@ -3209,7 +3473,7 @@ The mapping below is the acceptance evidence for this TDD. Every test name follo
 | FR-EXEC-011 — policy pinning | `application::given_policy_change_mid_task_when_resumed_then_paused` | application |
 | FR-EXEC-013 — intent/result | `application::given_intent_without_result_when_resumed_then_interrupted` | application |
 | FR-LEDGER-003 — rationale | `application::given_blank_rationale_when_decision_answered_then_rejected` | application |
-| FR-LEDGER-005 — append-only | `application::given_supersession_when_written_then_old_record_unchanged` | application |
+| FR-LEDGER-005 - append-only | `application::given_supersession_when_written_then_old_rationale_unchanged` | application |
 | FR-LEDGER-010 — pending vs resolved | `application::given_resolved_decision_when_written_then_only_record_enters_ledger` | application |
 | FR-VER-005 — evidence | `application::given_check_when_completed_then_artifact_has_command_exit_time_tree_hash` | application |
 | FR-VER-007 — verified checklist | `application::given_missing_criterion_when_verifying_then_not_review` | application |
@@ -3247,7 +3511,7 @@ This document fixes the Rust contract. The following TDDs own the encodings and 
 | TDD-0001 | `.forge/config` TOML schema, init flow, repo-map confirmation, CLI | New `ConfigSnapshot` fields if they are optional and mapped to a default; new `CheckKind` variants |
 | TDD-0003 | `state.json`, `events.jsonl`, `plans/`, `artifacts/`, resume algorithm, lock file | New `SessionEventKind` variants; new `SessionSnapshot` persistence metadata |
 | TDD-0004 | Plan materiality, policy trigger rules, gate content, state-machine guards, failure policy | New `PolicyTriggerKind` variants only with an amendment; new domain-service internals |
-| TDD-0005 | Decision and assumption Markdown/YAML, validation, index, trailer parsing | New `DecisionRecord`/`AssumptionRecord` fields only with an amendment |
+| TDD-0005 | Decision and assumption Markdown/YAML, validation, index, trailer parsing | New `DecisionRecord`/`AssumptionRecord` fields only with an amendment. **TDD-0005 has amended this document**; see its §17 and the `Amended by` note above. |
 | TDD-0006 | MXC policy JSON, worker IPC framing, permission store, canaries | New `SandboxProbeCheck` detail; new `SandboxError` variants |
 | TDD-0007 | Provider profiles, wire mappings, price table, budget arithmetic | New `ModelInfo` fields; new `ModelError` variants |
 | TDD-0008 | Git adapter mechanics, attestation JSON, signing, hooks, merge, reopen | New `AttestationRecord`/`OverrideRecord` fields only with an amendment |
@@ -3259,6 +3523,7 @@ This document fixes the Rust contract. The following TDDs own the encodings and 
 
 - TDD-0007 must confirm that `ModelRequest`/`ModelResponse` are sufficient for both Anthropic Messages and OpenAI Chat Completions; if not, it amends this document rather than leaking a provider type.
 - TDD-0008 must confirm that `AttestationRecord` carries every binding in FR-REV-010 and FR-MERGE-004; if not, it amends this document.
+- TDD-0005 has amended this document with `VerifyLedger`, the ledger record types, `LedgerPort`/`GitPort` additions, and the `substance_hash` binding. TDD-0008 must implement `current_worktree`, `first_parent_log`, and the merge-time backlink write without changing the fields fixed by TDD-0005.
 - TDD-0004 must confirm that the `PolicyEvaluator` boundary is sufficient for plan-time, pre-action, and replan checks; if not, it amends this document.
 - `arch_docs/architecture.md` §9.2 is corrected by this TDD to remove `TerminalError` from the core error list. The architecture doc remains authoritative for the boundary; the correction is recorded in the same change.
 
