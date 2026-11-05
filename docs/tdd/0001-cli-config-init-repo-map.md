@@ -9,6 +9,7 @@
 **Ticket:** [Define the CLI, configuration, init, and repo map contract (TDD-0001)](https://github.com/Xaidel/forge/issues/26)
 **Map:** [Forge v1 — Technical Design](https://github.com/Xaidel/forge/issues/19)
 **Amends:** none
+**Amended by:** [TDD-0007](0007-model-adapters-providers-cost.md) (2026-11-05) - profile auth/locality/capabilities/session header, price table, token budgets, privacy, and base-URL path rule.
 
 ---
 
