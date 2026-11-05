@@ -2104,6 +2104,26 @@ No open item changes a v1 product decision, and no item is an unresolved owner d
 
 ---
 
+### 19.4 Provider evidence
+
+The built-in catalog, price rows, and wire details were checked against the providers' primary documentation on 2026-11-05:
+
+| Source | Used for |
+|---|---|
+| [Anthropic pricing](https://platform.claude.com/docs/en/about-claude/pricing) | Claude input/output/cache rates and cache tiers. |
+| [Anthropic models overview](https://platform.claude.com/docs/en/models/overview) | Claude model IDs, context windows, max output. |
+| [Anthropic Messages API](https://platform.claude.com/docs/en/api/messages/create) | `anthropic-version`, Messages request/stream fields, usage fields. |
+| [OpenAI pricing](https://developers.openai.com/api/docs/pricing) | GPT-6/GPT-5.6/GPT-5.5 input/output/cached/long-context rates. |
+| [OpenAI models](https://developers.openai.com/api/docs/models) | GPT-6 flagship and coding model IDs, context windows, max output. |
+| [OpenAI Chat Completions streaming](https://developers.openai.com/api/reference/resources/chat/subresources/completions/streaming-events) | Delta/tool-call/usage chunk shapes, `stream_options.include_usage`, `[DONE]`. |
+| [DeepSeek pricing](https://api-docs.deepseek.com/quick_start/pricing/) | DeepSeek V4.1 Flash peak/off-peak and cache-hit rates. |
+| [OpenCode Go](https://opencode.ai/docs/go) | Stable `x-opencode-session` semantics and Go model access. |
+| [OpenCode inference API](https://opencode.ai/v2/docs/console/api/inference) | Usage, provider-reported cost, and `usage.opencode` shape. |
+
+Prices and model IDs are versioned data. A later provider change does not invalidate the contracts; it updates the table version, the as-of date, or a config override.
+
+---
+
 ## 20. Changelog
 
 | Version | Date | Change |
