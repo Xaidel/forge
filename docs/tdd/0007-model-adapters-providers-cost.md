@@ -1,6 +1,6 @@
 # TDD-0007 — Model Adapters, Provider Profiles, and Cost
 
-**Status:** Proposed
+**Status:** Approved
 **Date:** 2026-11-05
 **Owner:** Forge architecture
 **Sources:** `docs/PRD.md` §5.1, §7.9, §8.2, §8.4, §9.4, §11.9, §13.11, §15.2; FR-MODEL-001..009, NFR-COST-001, NFR-PRIV-001; D-13, D-16
@@ -2095,7 +2095,7 @@ No open item changes a v1 product decision, and no item is an unresolved owner d
 
 ### 19.3 Ticket Done checklist
 
-- [ ] `docs/tdd/0007-model-adapters-providers-cost.md` exists and is approved by the owner. The document is `Status: Proposed` until that sign-off; this checkbox stays open until then.
+- [x] `docs/tdd/0007-model-adapters-providers-cost.md` exists and is approved by the owner. Approved 2026-11-06.
 - [x] Exact core types, adapter mappings, provider profile schema, price table, and budget math are specified.
 - [x] Adapter contract tests cover streaming, tool calls, usage, errors, and unknown values (§15.2).
 - [x] Requirement-to-test mapping covers FR-MODEL-001..009 and NFR-COST-001 (§16).
@@ -2129,6 +2129,7 @@ Prices and model IDs are versioned data. A later provider change does not invali
 | Version | Date | Change |
 |---|---|---|
 | 1.0 | 2026-11-05 | Initial TDD-0007 proposal: two adapters, four templates, key file, model fingerprint, price table, cost and budget math, source-envelope wire syntax, retries/timeouts/errors, fixtures and requirement map. Amends TDD-0001 and TDD-0002 per §17. |
+| 1.1 | 2026-11-06 | Approved by the owner after review; no contract changes. |
 
 ---
 
