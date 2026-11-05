@@ -7,7 +7,7 @@
 **Companions:** [architecture.md](../../arch_docs/architecture.md), [dependency-rules.md](../../arch_docs/dependency-rules.md), [naming-conventions.md](../../arch_docs/naming-conventions.md)  
 **ADRs:** [ADR-0001](../adr/0001-two-crate-ports-only-core.md), [ADR-0002](../adr/0002-executor-agnostic-io-free-core.md), [ADR-0003](../adr/0003-hidden-worker-subcommand.md), [ADR-0004](../adr/0004-callback-model-streaming-cancellation.md), [ADR-0005](../adr/0005-repo-scoped-sequential-task-ids.md)  
 **Ticket:** [Define the domain model, ports, and application assembly (TDD-0002)](https://github.com/Xaidel/forge/issues/21)
-**Amended by:** [TDD-0005](0005-decision-ledger-records.md) (2026-11-04) — ledger record types, `VerifyLedger`, `LedgerPort`/`GitPort` additions, and the backlink/substance-hash contract.
+**Amended by:** [TDD-0005](0005-decision-ledger-records.md) (2026-11-04) — ledger record types, `VerifyLedger`, `LedgerPort`/`GitPort` additions, and the backlink/substance-hash contract. [TDD-0007](0007-model-adapters-providers-cost.md) (2026-11-05) — model request identity, usage reported cost, cost/budget/token records, model fingerprint, validation mode, and session events.
 
 ---
 
